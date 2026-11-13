@@ -1,0 +1,25 @@
+# 로컬 개발용 PostgreSQL (배포 서버는 Neon 등 클라우드 Postgres 사용)
+# 실행: docker compose up -d   /  중지: docker compose down
+# 데이터까지 지우기: docker compose down -v
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: jarvis-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jarvis
+      POSTGRES_PASSWORD: jarvis_local_pw
+      POSTGRES_DB: jarvis
+      TZ: Asia/Seoul
+    ports:
+      - "5432:5432"
+    volumes:
+      - jarvis-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jarvis -d jarvis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  jarvis-pgdata:

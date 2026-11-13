@@ -1,0 +1,143 @@
+// 비서 자비스 웹사이트 DB — 요구사항명세서 DAR-002(v0.2) 기준
+// + admin 로그인 잠금 칼럼, 반복 등록 제한 테이블(SER-002 ①④)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Admin {
+  id           Int       @id @default(autoincrement())          // 관리자ID
+  loginId      String    @unique @map("login_id")              // 아이디
+  passwordHash String    @map("password_hash")                 // 비밀번호 해시 (bcrypt)
+  name         String                                          // 이름
+  failedCount  Int       @default(0) @map("failed_count")      // 연속 로그인 실패 횟수
+  lockedUntil  DateTime? @map("locked_until")                  // 잠금 해제 시각
+
+  answers  Answer[]
+  releases Release[]
+
+  @@map("admin")
+}
+
+model Question {
+  id           Int      @id @default(autoincrement())          // 질문ID
+  nickname     String
+  passwordHash String   @map("password_hash")                  // 글 비밀번호 해시 (bcrypt)
+  email        String?                                         // 선택·비공개, 답변 알림 후 비움
+  title        String
+  content      String
+  createdAt    DateTime @default(now()) @map("created_at")
+  isHidden     Boolean  @default(false) @map("is_hidden")      // 관리자가 숨김(스팸 등)
+  isSecret     Boolean  @default(false) @map("is_secret")      // 작성자가 설정한 비밀글
+  notifyStatus NotifyStatus @default(NONE) @map("notify_status") // 답변 알림 메일 상태
+
+  answer Answer?
+
+  @@map("question")
+}
+
+enum NotifyStatus {
+  NONE     // 이메일 미입력
+  PENDING  // 이메일 있음, 아직 답변 전
+  SENT     // 발송 완료 (이메일은 비움)
+  FAILED   // 발송 실패 (이메일 보관, 관리자가 재발송)
+}
+
+model Answer {
+  id         Int      @id @default(autoincrement())            // 답변ID
+  questionId Int      @unique @map("question_id")              // 질문 1개당 답변 1개
+  adminId    Int      @map("admin_id")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  admin    Admin    @relation(fields: [adminId], references: [id])
+
+  @@map("answer")
+}
+
+enum BugStatus {
+  RECEIVED  // 접수
+  CHECKING  // 확인 중
+  FIXED     // 수정 완료
+  DEPLOYED  // 배포됨
+}
+
+model BugReport {
+  id                Int       @id @default(autoincrement())    // 버그ID
+  nickname          String
+  passwordHash      String    @map("password_hash")
+  title             String
+  appVersion        String    @map("app_version")
+  os                String
+  content           String                                     // 발생 상황
+  reproSteps        String    @map("repro_steps")              // 재현 방법
+  attachmentUrl     String?   @map("attachment_url")           // 첨부파일(스크린샷) 주소
+  status            BugStatus @default(RECEIVED)               // 처리 상태
+  resolvedReleaseId Int?      @map("resolved_release_id")      // 해결 릴리스ID
+  createdAt         DateTime  @default(now()) @map("created_at")
+  adminMemo         String?   @map("admin_memo")               // 비공개
+  mergedIntoBugId   Int?      @map("merged_into_bug_id")       // 병합 대상 버그ID
+
+  resolvedRelease Release?    @relation(fields: [resolvedReleaseId], references: [id], onDelete: SetNull)
+  mergedInto      BugReport?  @relation("BugMerge", fields: [mergedIntoBugId], references: [id], onDelete: SetNull)
+  duplicates      BugReport[] @relation("BugMerge")
+
+  @@index([status])
+  @@map("bug_report")
+}
+
+enum ReleaseSource {
+  GITHUB  // GitHub Actions 자동 등록
+  MANUAL  // 관리자 수동 등록
+}
+
+model Release {
+  id               Int           @id @default(autoincrement()) // 릴리스ID
+  version          String        @unique                        // vX.Y.Z
+  releasedAt       DateTime      @map("released_at")            // 배포일
+  releaseNote      String        @map("release_note")
+  downloadUrl      String        @map("download_url")           // GitHub Releases 파일 URL
+  sha256           String        @db.Char(64)                   // 해시값
+  fileSize         Int           @map("file_size")              // 파일 크기(byte, 2GB 미만)
+  githubReleaseUrl String?       @map("github_release_url")
+  source           ReleaseSource
+  uploadedBy       Int?          @map("uploaded_by")            // 수동 등록 시 관리자ID
+  isHidden         Boolean       @default(false) @map("is_hidden")
+
+  uploader     Admin?      @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  resolvedBugs BugReport[]
+
+  @@map("release")
+}
+
+model Faq {
+  id        Int    @id @default(autoincrement())               // FAQID
+  question  String
+  answer    String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  @@map("faq")
+}
+
+// 비로그인 글쓰기 반복 등록 제한 + 글 비밀번호 틀림 횟수 제한 (같은 IP + 짧은 시간)
+// 기록은 POST_ATTEMPT_RETENTION_DAYS(1일)가 지나면 자동 삭제
+model PostAttempt {
+  id         Int      @id @default(autoincrement())
+  ipHash     String   @map("ip_hash")                          // IP 원문 대신 해시 저장
+  action     String                                            // "question" | "bug_report" | "password_fail"
+  targetType String?  @map("target_type")                      // password_fail일 때 "question" | "bug_report"
+  targetId   Int?     @map("target_id")                        // password_fail일 때 대상 글ID
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([ipHash, action, targetType, targetId, createdAt])
+  @@index([createdAt])
+  @@map("post_attempt")
+}

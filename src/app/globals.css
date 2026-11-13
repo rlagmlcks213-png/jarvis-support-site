@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/*
+ * 테마 토큰
+ * - 공개 화면: 라이트 고정 (메인 #1E3A8A 딥 블루 + 인디고)
+ * - 관리자 화면: .admin-theme 래퍼 안에서 다크 토큰으로 전환
+ */
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --border: #e2e8f0;
+  --fg: #0f172a;
+  --fg-muted: #64748b;
+  --brand: #1e3a8a;
+  --brand-hover: #1e40af;
+  --brand-soft: #eef2ff;
+  --brand-text: #1e3a8a;
+  --accent: #4f46e5;
+  --input-bg: #ffffff;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --ring: #6366f1;
+  color-scheme: light;
+}
+
+.admin-theme {
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-muted: #1f2937;
+  --border: #334155;
+  --fg: #e5e7eb;
+  --fg-muted: #94a3b8;
+  --brand: #4f46e5;
+  --brand-hover: #6366f1;
+  --brand-soft: rgba(99, 102, 241, 0.16);
+  --brand-text: #a5b4fc;
+  --accent: #818cf8;
+  --input-bg: #0f172a;
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --ring: #818cf8;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-text: var(--brand-text);
+  --color-accent: var(--accent);
+  --color-input: var(--input-bg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 공통 포커스 표시 */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@utility card {
+  @apply rounded-xl border border-line bg-surface shadow-md;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand text-white hover:bg-brand-hover;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-surface text-fg hover:bg-surface-muted;
+}
+@utility btn-danger {
+  @apply btn bg-danger text-white hover:opacity-90;
+}
+@utility btn-ghost {
+  @apply btn text-muted hover:bg-surface-muted hover:text-fg;
+}
+@utility btn-sm {
+  @apply px-2.5 py-1 text-xs;
+}
+@utility input {
+  @apply w-full rounded-lg border border-line bg-input px-3 py-2 text-sm text-fg placeholder:text-muted/70 focus:border-accent focus:outline-none focus-visible:outline-2;
+}
+@utility input-error {
+  @apply border-danger;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium text-fg;
+}
+@utility link {
+  @apply font-medium text-brand-text underline-offset-2 hover:underline;
+}
+
+/* 상태 뱃지 — 접수(회색)·확인 중(노랑)·수정 완료(파랑)·배포됨(초록), 대기 중(주황)·답변 완료(초록) */
+@utility badge {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap;
+}
+@utility badge-gray {
+  @apply badge bg-gray-100 text-gray-700;
+}
+@utility badge-yellow {
+  @apply badge bg-yellow-100 text-yellow-800;
+}
+@utility badge-blue {
+  @apply badge bg-blue-100 text-blue-800;
+}
+@utility badge-green {
+  @apply badge bg-green-100 text-green-800;
+}
+@utility badge-orange {
+  @apply badge bg-orange-100 text-orange-800;
+}
+@utility badge-indigo {
+  @apply badge bg-indigo-100 text-indigo-800;
+}
+.admin-theme .badge-gray {
+  @apply bg-gray-500/20 text-gray-300;
+}
+.admin-theme .badge-yellow {
+  @apply bg-yellow-400/15 text-yellow-300;
+}
+.admin-theme .badge-blue {
+  @apply bg-blue-400/15 text-blue-300;
+}
+.admin-theme .badge-green {
+  @apply bg-green-400/15 text-green-300;
+}
+.admin-theme .badge-orange {
+  @apply bg-orange-400/15 text-orange-300;
+}
+.admin-theme .badge-indigo {
+  @apply bg-indigo-400/15 text-indigo-300;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-toast-in {
+    animation: none;
+  }
+}
