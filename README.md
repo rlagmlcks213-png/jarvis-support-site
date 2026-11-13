@@ -1,85 +1,162 @@
 # 비서 자비스 — 사용자 지원 웹사이트
 
-캡스톤디자인1 · 팀 헤이 자비스. Next.js(App Router) + TypeScript + Tailwind + **Prisma + PostgreSQL**.
+> 캡스톤디자인1 · 팀 헤이 자비스
+> Windows 데스크톱 AI 일정 비서 **"비서 자비스"**의 소개·다운로드·릴리스 노트·FAQ·QnA·버그 신고 사이트와 관리자 화면입니다.
 
-## 처음 실행하기
+일반 사용자는 회원가입 없이 **닉네임 + 글 비밀번호**로 질문하고 버그를 신고합니다. 개발팀은 공용 관리자 계정으로 답변, 버그 처리, 릴리스, FAQ를 관리합니다. 설치 파일(.exe)은 앱 저장소의 **GitHub Releases**에 올리고, 이 사이트는 그 파일로 연결합니다.
+
+---
+
+## 주요 기능
+
+**공개 화면** (PC·모바일 반응형, 로그인 없음)
+
+| 화면 | 주소 | 내용 |
+|---|---|---|
+| 메인 | `/` | 앱 소개, 기능 카드, 캐릭터 상태 6종 |
+| 다운로드 | `/download` | 최신·이전 버전, SHA-256·파일 크기, SmartScreen 안내 |
+| 릴리스 노트 | `/releases` | 버전별 변경 사항, 해결된 버그 링크 |
+| FAQ | `/faq` | 자주 묻는 질문, 키워드 필터 |
+| QnA | `/qna` | 질문 작성·수정·삭제, 비밀글, 답변 알림 메일(선택) |
+| 버그 신고 | `/bugs` | 스크린샷 첨부, 처리 상태(접수 → 확인 중 → 수정 완료 → 배포됨), 앱 트레이에서 버전·OS 자동 입력 |
+| 개인정보처리방침 | `/privacy` | 수집 항목·목적·보관 기간, 구글·Gemini 데이터 고지 |
+| 통합 검색 | `/search` | FAQ·릴리스·QnA·버그 한 번에 검색 |
+
+**관리자 화면** (`/admin` 직접 입력, 공개 화면에는 관리자 버튼이 없음)
+
+| 화면 | 내용 |
+|---|---|
+| 대시보드 | 새 질문·미처리 버그 수, 최신 릴리스 |
+| 릴리스 관리 | GitHub Actions 자동 등록 확인, 수동 등록, 노트 수정, 해결 버그 연결, 숨김·삭제 |
+| 답변·상태 관리 | QnA 답변·숨김, 버그 상태·메모·병합, FAQ 관리, 게시물 강제 수정·삭제 |
+
+**앱 연동 API**
+
+| API | 용도 |
+|---|---|
+| `GET /api/releases/latest` | 데스크톱 앱이 새 버전을 확인할 때 씀. `version`은 `v1.0.2` 형식 |
+| `POST /api/releases/sync` | GitHub Actions가 새 릴리스를 등록할 때 씀 (`Bearer SYNC_SECRET`) |
+| `/bugs/new?appVersion=1.0.2&os=windows11&from=tray` | 앱 트레이 메뉴 → 버그 신고 (버전·OS 자동 입력) |
+
+---
+
+## 기술 스택
+
+- **Next.js 15** (App Router, Server Actions) · **React 19** · **TypeScript** · **Tailwind CSS v4**
+- **Prisma 6** + **PostgreSQL** (로컬: 내장 PostgreSQL 또는 Docker / 배포: Neon)
+- 배포: **Vercel** (사이트 · Blob 스크린샷 저장소 · Cron)
+- 메일: console / Gmail SMTP / Resend 중 선택
+
+---
+
+## 로컬에서 실행하기
+
+Node.js 20 이상이 필요합니다.
 
 ```bash
-# 0) Docker Desktop 설치·실행 (로컬 PostgreSQL용)
 npm install
-cp .env.example .env          # 값 채우기 (아래 표)
-npm run db:up                 # PostgreSQL 컨테이너 시작 (docker compose)
-npm run db:migrate            # 테이블 만들기 (prisma/migrations)
-npm run db:seed               # 관리자 1명 (글·FAQ는 사이트에서 직접 작성)
-npm run db:demo               # (선택) 시연용 릴리스·버그·QnA — 글 비밀번호 1234
-npm run dev                   # http://localhost:3000
+cp .env.example .env            # 값 채우기 (아래 "환경변수")
 ```
 
-**Docker 없이 실행하기:** `npm run db:up` 대신 터미널 하나에서 `npm run db:local`을 켜 두세요. 이 명령은 내장 PostgreSQL을 localhost:54329로 띄우고, 데이터는 `%LOCALAPPDATA%\jarvis-localdb`에 저장합니다. 그다음 다른 터미널에서 `npx prisma migrate deploy` → `db:seed` → `db:demo` → `dev` 순서로 실행합니다. `.env`의 DB 주소 포트는 54329로 맞춰야 합니다.
+**DB 띄우기 — 둘 중 하나**
 
-- 관리자: 주소창에 `/admin` 직접 입력 → `.env`의 `ADMIN_INITIAL_LOGIN_ID` / `ADMIN_INITIAL_PASSWORD`
-  (공개 화면에는 관리자 버튼이 없음. 로그인하면 공개 화면에서도 비밀글 열람·글 수정/삭제를 비밀번호 없이 할 수 있음)
+| 방법 | 명령 | `.env` DB 포트 |
+|---|---|---|
+| Docker 없이 (Windows) | 터미널 하나에서 `npm run db:local`을 켜 둔다 | `54329` |
+| Docker Desktop | `npm run db:up` | `5432` |
+
+- `db:local`의 데이터는 `%LOCALAPPDATA%\jarvis-localdb`에 저장됩니다.
+
+**처음 한 번 → 실행**
+
+```bash
+npx prisma migrate deploy       # 테이블 만들기
+npm run db:seed                 # 관리자 계정 1개 (.env의 ADMIN_INITIAL_*)
+npm run db:demo                 # (선택) 시연용 예시 글 — 글 비밀번호 1234
+npm run dev                     # http://localhost:3000 · 관리자: /admin
+```
+
 - DB 내용 보기: `npm run db:studio`
-- 중지: `npm run db:down` (데이터 유지) / 데이터까지 지우기: `docker compose down -v`
+- Docker DB 중지: `npm run db:down` / 데이터까지 지우기: `docker compose down -v`
 
-### 환경변수 (`.env`)
+---
+
+## 환경변수
+
+`.env.example`을 복사해 `.env`를 만듭니다. **`.env`와 `.env*.local`은 커밋하지 않습니다**(`.gitignore`에 포함).
 
 | 이름 | 설명 |
 |---|---|
-| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소. 로컬은 docker-compose 값 그대로, 배포는 Neon 등의 pooled / direct 주소 |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 최초 관리자 계정 (`change-me…`이면 seed가 거부함) |
-| `SESSION_SECRET` | 관리자 세션·비밀글 열람 쿠키·캡차 서명 키. **32자 이상 무작위** (운영에서 `change-me…` 금지) |
-| `SYNC_SECRET` | GitHub Actions → `POST /api/releases/sync` 인증 토큰 |
-| `GITHUB_REPO` | 설치 파일을 올리는 공개 저장소 `OWNER/REPO` (바꾸면 dev 서버 재시작) |
-| `MAIL_PROVIDER` | `console`(기본, 콘솔 출력) · `gmail` · `resend` |
-| `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail SMTP (2단계 인증 + 앱 비밀번호) |
-| `RESEND_API_KEY`, `MAIL_FROM` | Resend (도메인 인증 필요) |
-| `SITE_URL` | 알림 메일 속 링크 주소 |
-| `CRON_SECRET` | Vercel Cron → `GET /api/cron/cleanup`(개인정보 정리, 매일 03:00 KST · vercel.json) 인증 토큰 |
-| `STORAGE_PROVIDER`, `BLOB_READ_WRITE_TOKEN` | 스크린샷 저장소. 개발 `local`, 배포 `blob`(Vercel Blob 토큰) |
+| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소 (배포: Neon pooled / direct) |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 12자 이상만 받음. **Vercel에 넣지 않음** |
+| `SESSION_SECRET` | 세션·열람 쿠키·캡차 서명 키 (32자 이상 무작위) |
+| `SYNC_SECRET` | 릴리스 자동 등록 API 인증 토큰 (앱 저장소 Actions Secret과 같은 값) |
+| `CRON_SECRET` | Vercel Cron 개인정보 정리 라우트 인증 토큰 |
+| `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 |
+| `STORAGE_PROVIDER`, `BLOB_READ_WRITE_TOKEN` | 스크린샷 저장소. 개발 `local`, 배포 `blob` |
+| `MAIL_PROVIDER`, `GMAIL_*`, `RESEND_API_KEY`, `MAIL_FROM` | 답변 알림 메일 |
+| `SITE_URL` | 메일 속 링크 주소 |
 
-> Prisma CLI는 `.env`만 읽습니다. `.env.local`에 넣은 값은 Next.js만 읽으니, DB 관련 값은 꼭 `.env`에 두세요.
+- Prisma CLI는 `.env`만 읽습니다. DB 관련 값은 꼭 `.env`에 두세요.
+- Vercel·앱 저장소·로컬에 각각 어떤 값을 넣는지는 [IMPLEMENTATION.md 12-2](IMPLEMENTATION.md#12-2-환경변수--어디에-무엇을-넣나)에 정리돼 있습니다.
 
-## 구조
+---
+
+## 브랜치 전략 (PMR-001)
+
+| 브랜치 | 용도 | Vercel 배포 |
+|---|---|---|
+| `main` | 배포본 | Production |
+| `dev` | 통합 브랜치 | Preview |
+| `feature/*` | 기능·수정 작업 | PR마다 Preview |
+
+```bash
+git switch dev && git pull
+git switch -c feature/작업-이름
+# 작업 후 push → GitHub에서 feature/* → dev PR
+# 배포할 때 dev → main PR
+```
+
+---
+
+## 폴더 구조
 
 ```
-prisma/
-  schema.prisma            DB 스키마 (DAR-002 v0.2 기준) · migrations/ · seed.ts · seed-demo.ts
+prisma/          schema.prisma · migrations/ · seed.ts · seed-demo.ts
+scripts/         local-db.mjs (Docker 없이 쓰는 로컬 PostgreSQL)
+public/images/   캐릭터·SmartScreen 이미지 (현재 임시 이미지)
 src/
-  app/(public)/            공개 화면 UI-009~014 · UI-019(/privacy) + /search (라이트 테마)
-  app/admin/               UI-015 로그인 · (protected)/ UI-016~018 (다크 테마, 서버에서 세션 확인)
-  app/api/
-    qna/[id]/unlock        POST 비밀글 열람 → 글 전용 열람 쿠키(30분)
-    releases/latest        GET  최신 버전 JSON (앱 연동)
-    releases/sync          POST GitHub Actions 등록 (Bearer SYNC_SECRET)
-    cron/cleanup           GET  Vercel Cron 개인정보 정리 (Bearer CRON_SECRET)
-  middleware.ts            /admin/* 서명 쿠키 확인 (1차)
-  server/                  ★ 서버 전용 — DB·비밀번호·메일·권한
-    actions/               Server Actions (화면이 호출하는 서버 함수)
-    services/              업무 로직 (Prisma)
-    auth.ts                관리자 서명 쿠키 세션 · 로그인 잠금
-    rate-limit.ts          post_attempt: 30초 재등록 제한 · 글 비밀번호 5회 실패 10분 차단
-    cleanup.ts             개인정보 자동 파기 (실패 이메일 7일 · IP 해시 1일)
-    captcha.ts notify.ts unlock.ts request.ts
-  lib/
-    repository/            화면 → 서버 호출 창구 (화면은 이것만 import)
-    db.ts password.ts      Prisma 클라이언트 · bcrypt (서버 전용)
-    mailer.ts              메일 발송 (console | gmail | resend)
-    storage.ts             스크린샷 저장소 (blob | local)
-    post-validation.ts release-validation.ts   화면·서버 공용 입력 검증
+  app/(public)/  공개 화면
+  app/admin/     관리자 화면 (로그인 · 대시보드 · 릴리스 · 답변·상태 관리)
+  app/api/       releases/latest · releases/sync · qna/[id]/unlock · cron/cleanup
+  middleware.ts  /admin/* 1차 확인
+  server/        ★ 서버 전용 — Server Actions, 업무 로직, 인증, 제한, 메일, 정리
+  lib/           repository(화면 → 서버 창구), 공용 검증, DB·저장소·메일 클라이언트
+  components/    공통 UI
 ```
+
+화면 코드는 `@/lib/repository`만 호출합니다. DB·비밀번호·메일·저장소 코드는 `server/`와 `lib/`의 서버 전용 파일에만 둡니다.
+
+---
 
 ## 보안 요약
 
-- 비밀번호(관리자·글)는 서버에서 **bcrypt** 해시만 저장. 비교도 서버에서만.
-- 공개 화면 응답에는 `passwordHash` · `email` · `notifyStatus` · `adminMemo`를 Prisma select 단계에서 제외.
-- 관리자 권한: middleware → 관리자 레이아웃 → 각 Server Action의 `requireAdmin()` 3단계.
-- 비밀글 본문은 서버가 열람 쿠키 또는 관리자 세션을 확인한 경우에만 내려줌. 검색 결과에서도 제외.
-- 답변 알림 메일은 첫 답변 때 1회. 성공하면 이메일 즉시 삭제, 실패하면 보관 후 관리자가 재발송.
-- 스크린샷은 png/jpeg/gif/webp만(파일 내용까지 검사), 4MB 이하. 파일은 저장소(Vercel Blob / 개발용 public/uploads)에, DB에는 주소만 저장.
-- 글 비밀번호(QnA 열람·수정·삭제, 버그 수정·삭제)는 같은 IP·같은 글 10분 5회 실패 시 10분 차단.
-- 운영 환경에서 관리자 세션·비밀글 열람 쿠키에 Secure. 실패 이메일(7일)·IP 해시(1일)는 자동 삭제.
+- 관리자·글 비밀번호는 **bcrypt 해시**로만 저장하고, 비교도 서버에서만 합니다.
+- 관리자 권한은 3단계로 확인합니다: middleware → 관리자 레이아웃 → 모든 Server Action의 `requireAdmin()`.
+- 관리자 로그인은 5회 실패 시 5분 잠금입니다. 계정이 공용 1개이므로 잠금도 공용입니다.
+- 글 비밀번호(QnA 열람·수정·삭제, 버그 수정·삭제)는 같은 IP·같은 글에서 10분 안에 5회 틀리면 10분 동안 차단합니다.
+- 비로그인 글쓰기에는 캡차와 30초 재등록 제한을 적용합니다. 출력은 React 기본 이스케이프만 씁니다.
+- 공개 응답에서는 비밀번호 해시·이메일·알림 상태·관리자 메모를 DB 조회 단계에서 제외합니다.
+- 스크린샷은 png/jpeg/gif/webp만 받고(파일 내용까지 검사), 4MB 이하입니다.
+- 이메일은 알림을 보낸 뒤 즉시 삭제합니다. 발송에 실패한 이메일은 7일, IP 해시는 1일 뒤 자동 삭제합니다.
+- 운영 환경의 쿠키에는 `Secure`·`HttpOnly`를 붙입니다.
 
-`TODO(확정 필요)`로 검색하면 팀 결정이 필요한 항목을 찾을 수 있습니다.
+---
 
-자세한 구현 현황은 [IMPLEMENTATION.md](IMPLEMENTATION.md)를 보세요.
+## 문서
+
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) — 구현 현황 전체
+  - 화면별 기능, DB, API·연동 규약
+  - 환경변수 구분, 배포 절차, Vercel 확인 목록
+- 팀 결정이 필요한 항목은 코드에서 `TODO(확정 필요)`로 검색할 수 있습니다.
+- 기준 문서: 요구사항명세서 v0.2, 화면 상위설계 계획서 v0.2
