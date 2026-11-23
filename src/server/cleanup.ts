@@ -10,7 +10,6 @@ import { FAILED_EMAIL_RETENTION_DAYS, POST_ATTEMPT_RETENTION_DAYS } from "@/lib/
 //
 // 실행 시점: 글 등록·비밀번호 실패 기록·관리자 대시보드 조회 때 next/server의 after()로
 // 응답을 보낸 뒤에 돌린다 → 사용자 응답이 느려지지 않음. 같은 서버 인스턴스에서는 10분에 한 번만.
-// + 보완: Vercel Cron이 하루 1번 GET /api/cron/cleanup 호출 (vercel.json, 매일 03:00 KST) → 방문자가 없어도 기한 준수
 
 const MIN_INTERVAL_MS = 10 * 60_000;
 let lastRun = 0;

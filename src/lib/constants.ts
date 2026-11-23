@@ -39,8 +39,8 @@ export const PRIVACY_CONTACT_EMAIL = "";
 export const CAPTCHA_TTL_MINUTES = 10;
 
 /**
- * 스크린샷 첨부 상한: 4MB — 파일은 저장소(Vercel Blob / 개발용 public/uploads)에 두고 DB에는 주소만 저장.
- * Vercel 요청 본문 4.5MB 제한 안에 들어가도록 4MB (파일은 FormData로 원본 그대로 전송)
+ * 스크린샷 첨부 상한: 4MB — 파일은 서버 업로드 폴더(lib/storage.ts)에 두고 DB에는 주소만 저장.
+ * 파일은 FormData로 원본 그대로 전송 (next.config.ts의 Server Action 요청 상한 5mb 안)
  */
 export const ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
 /** 허용 이미지 형식 (SVG는 스크립트를 담을 수 있어 제외) */

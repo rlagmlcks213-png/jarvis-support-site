@@ -23,8 +23,8 @@
 | 사용자 | **일반 사용자**: 회원가입 없음. 닉네임 + 글 비밀번호(+ 선택 이메일)로 글을 쓰고, 수정·삭제·비밀글 열람 때 그 비밀번호만 입력 (SFR-004)<br>**관리자**: 미리 등록된 계정만 `/admin`에서 로그인. 로그인하면 모든 관리 기능을 쓰고, 공개 화면의 글도 비밀번호 없이 열람·수정·삭제 (SFR-006) |
 | 스택 | Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Prisma 6 · PostgreSQL |
 | 인증 | 관리자만 로그인. HMAC 서명 쿠키 세션(외부 인증 라이브러리 없음) |
-| 파일 | 설치 파일(.exe): **GitHub Releases에만** 둔다 (SFR-005 ①, SER-002 ⑤)<br>스크린샷: 파일 저장소(Vercel Blob)에 두고 DB에는 주소만 저장 |
-| 배포 계획 | Vercel(사이트 + Blob) + Neon(PostgreSQL) |
+| 파일 | 설치 파일(.exe): **GitHub Releases에만** 둔다 (SFR-005 ①, SER-002 ⑤)<br>스크린샷: 서버 업로드 폴더(`UPLOAD_DIR`)에 두고 DB에는 주소만 저장 |
+| 배포 | 미정. 플랫폼 전용 설정 없이 순수 Next.js(프론트엔드 + 백엔드) 프로젝트로 유지한다 (12장) |
 | 상태 | 기능 구현 완료, 로컬 실행·체크리스트 검증 완료. 글 데이터는 비워 둔 상태(관리자 계정만 있음) |
 
 ---
@@ -120,7 +120,7 @@
   - 발송·재발송에 성공하면 이메일을 즉시 삭제하고 SENT로 바꾼다.
   - 실패하면 이메일을 보관하고 FAILED로 바꾼다. 관리자 화면에 [재발송] 버튼이 생긴다.
   - FAILED 이메일은 첫 답변 후 **7일**(`FAILED_EMAIL_RETENTION_DAYS`, **[미정]**)이 지나면 자동 삭제한다. 그 뒤 관리자 화면에는 "보관 기한이 지나 이메일을 삭제했어요 (재발송 불가)"가 표시된다.
-  - 정리 시점: 요청 후 실행(after) + Vercel Cron 하루 1번 → 방문자가 없어도 기한을 지킨다.
+  - 정리 시점: 글 등록·비밀번호 실패·관리자 대시보드 조회 때 응답 후 실행(after). 방문자가 없는 기간에는 정리가 미뤄진다(12-5 참고).
 - 비밀글이면 메일에 제목·답변 본문을 넣지 않는다. 링크만 보낸다.
 - 발송 방식은 `MAIL_PROVIDER`로 고른다: `console`(기본, 콘솔 출력) / `gmail`(nodemailer SMTP) / `resend`.
 
@@ -268,9 +268,9 @@ Enum 값:
 | `GET /api/releases/latest` | 데스크톱 앱 새 버전 확인 (SFR-005 ④) | 없음 | `{ version: "v1.0.2", releasedAt, downloadUrl, sha256 }`. 없으면 404. `Cache-Control: no-store`. 앱은 `package.json`의 `1.0.2` 앞에 `v`를 붙여 비교한다 |
 | `POST /api/releases/sync` | GitHub Actions 자동 등록 | `Authorization: Bearer {SYNC_SECRET}` (timing-safe 비교) | 201 등록 / 401 인증 실패 / 409 중복 / 422 형식 오류(필드별 `errors`) / 500 SYNC_SECRET 미설정 |
 | `POST /api/qna/[id]/unlock` | 비밀글 비밀번호 확인 | 글 비밀번호 | 성공하면 열람 쿠키 발급. 실패 제한 적용 시 429 |
-| `GET /api/cron/cleanup` | 개인정보 정리 (Vercel Cron, 하루 1번) | `Authorization: Bearer {CRON_SECRET}` (timing-safe 비교) | 200 `{ ok, removed: { attempts, emails } }` / 401 인증 실패 / 500 CRON_SECRET 미설정 |
+| `GET /api/uploads/bugs/[name]` | 버그 신고 스크린샷 이미지 | 없음 | 업로드 폴더의 이미지. 서버가 만든 UUID 파일명만 허용, `nosniff`·`CSP default-src 'none'` |
 
-- 예전 `GET /api/bugs/[id]/attachment` 라우트는 **삭제**했다. 스크린샷은 저장소 주소로 바로 보여준다.
+- 스크린샷 파일은 DB가 아니라 업로드 폴더에 있고, DB에는 `/api/uploads/bugs/{파일명}` 주소만 저장한다.
 
 **`/api/releases/sync` 요청 본문**
 
@@ -311,7 +311,7 @@ Enum 값:
 prisma/        schema.prisma · migrations/ · seed.ts(관리자 1명) · seed-demo.ts(시연 데이터, 선택)
 scripts/       local-db.mjs (Docker 없이 쓰는 로컬 PostgreSQL)
 public/images/ 캐릭터 6종·SmartScreen 임시 이미지 (같은 파일명으로 교체)
-public/uploads/ 개발용 스크린샷 저장 위치 (git 제외)
+uploads/        스크린샷 저장 폴더 (UPLOAD_DIR 기본값, git 제외)
 src/
   app/(public)/              공개 화면 (privacy 포함)
   app/admin/                 로그인 · (protected)/ 대시보드·릴리스·관리 탭
@@ -325,12 +325,11 @@ src/
     services/                questions · bugs · releases · misc(FAQ·검색·대시보드·강제 수정/삭제)
     auth.ts                  세션·로그인 잠금
     rate-limit.ts            30초 재등록 제한, 글 비밀번호 실패 제한(password_fail)
-    cleanup.ts               개인정보 자동 파기 — ① after()로 요청 응답 후 실행(인스턴스당 10분에 1번)
-                             ② Vercel Cron 하루 1번 (app/api/cron/cleanup · vercel.json "0 18 * * *" = 매일 03:00 KST)
+    cleanup.ts               개인정보 자동 파기 — after()로 요청 응답 후 실행 (서버 인스턴스당 10분에 1번)
     captcha.ts notify.ts unlock.ts request.ts(IP 해시) env.ts mappers.ts run.ts
   lib/
     repository/              ★ 화면은 이것만 import
-    storage.ts               스크린샷 저장소 (STORAGE_PROVIDER: blob | local) — 서버 전용
+    storage.ts               스크린샷 저장 · 읽기 · 삭제 (UPLOAD_DIR 폴더) — 서버 전용
     types.ts constants.ts format.ts release-utils.ts
     validation.ts post-validation.ts release-validation.ts   화면·서버 공용 검증 (VERSION_RE, normalizeVersion 포함)
     signed-token.ts db.ts password.ts mailer.ts
@@ -386,21 +385,19 @@ src/
 
 | 이름 | 설명 |
 |---|---|
-| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL. 로컬은 `localhost:54329`(db:local) 또는 `5432`(Docker). 배포는 Neon pooled / direct |
+| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL. 로컬은 `localhost:54329`(db:local) 또는 `5432`(Docker). 배포 서버는 그 서버의 PostgreSQL 주소 (DIRECT_URL = 마이그레이션용 직접 연결) |
 | `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | seed 때만 쓴다. `change-me…`는 거부하고, 배포 DB는 12자 이상만 받는다 |
 | `SESSION_SECRET` | 32자 이상 무작위. 세션·열람 쿠키·캡차 서명 키 |
 | `SYNC_SECRET` | `/api/releases/sync` 인증 토큰. **서버 전용** |
 | `GITHUB_REPO` | **설치 파일(.exe)이 올라가는 "앱 저장소"(공개)**의 `OWNER/REPO`. 사이트 저장소가 아니다. 다운로드 URL 검증·링크에 쓴다 |
-| `CRON_SECRET` | `/api/cron/cleanup` 인증 토큰 (16자 이상 무작위). Vercel에 넣으면 Cron 호출에 자동으로 붙음. **서버 전용** |
-| `STORAGE_PROVIDER` | `blob`(배포) / `local`(개발, 운영에서는 거부) |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 토큰 (Vercel 프로젝트 → Storage → Blob 생성 시 발급) |
+| `UPLOAD_DIR` | (선택) 스크린샷 저장 폴더. 기본값: 프로젝트 폴더의 `uploads/`. 운영에서는 재배포해도 지워지지 않는 경로로 |
 | `MAIL_PROVIDER` | `console` / `gmail` / `resend` |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail SMTP |
 | `RESEND_API_KEY`, `MAIL_FROM` | Resend |
 | `SITE_URL` | 메일 속 링크 주소 |
 
 Prisma CLI는 `.env`만 읽는다. `.env.local`은 Next.js만 읽는다.
-어디에 어떤 값을 넣는지(Vercel / 앱 저장소 Actions / 로컬)는 **12-2**에 나눠 정리했다.
+어디에 어떤 값을 넣는지(배포 서버 / 앱 저장소 Actions / 로컬)는 **12-2**에 나눠 정리했다.
 
 ---
 
@@ -419,7 +416,7 @@ npm run db:demo         # (선택) 시연용 예시 글, 글 비밀번호 1234
 npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입력
 ```
 
-- 배포(Vercel)할 때는 `vercel-build`가 `prisma generate → prisma migrate deploy → next build`를 실행한다.
+- 운영 서버 실행 순서는 12-3 참고: `npm ci` → `npx prisma migrate deploy` → `npm run build` → `npm start`.
 
 ---
 
@@ -455,7 +452,7 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | 캐릭터·SmartScreen 이미지 | 임시 이미지 (같은 파일명으로 교체) |
 | 캡차 | 덧셈 캡차. 스팸이 많으면 Turnstile / reCAPTCHA 검토 |
 | 저장 시 HTML 이스케이프 | 원문 저장 + 출력 시 React 이스케이프. 다른 클라이언트가 HTML로 그리면 재검토 |
-| 배포 | 아래 12장 "배포할 때 할 일" 참고 (Git 브랜치·Vercel 연결·환경변수 구분·seed 절차) |
+| 배포 | 방식 미정. 정해지면 12장에 해당 플랫폼 절차 추가 |
 | GitHub Actions 워크플로 | 앱 저장소에서 `.exe` 빌드 → Release 생성 → sync 호출 (사이트 쪽 API는 준비 완료) |
 
 **만들지 않는 것** (문서 위반)
@@ -471,33 +468,23 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 
 ## 12. 배포할 때 할 일
 
-### 12-1. Git 브랜치 전략 (PMR-001)과 Vercel 연결
+> **배포 방식은 아직 정하지 않았다.** 이 프로젝트에는 특정 호스팅 플랫폼 전용 설정(설정 파일, 빌드 스크립트, SDK)이 없다. 순수 Next.js 프론트엔드 + 백엔드(Server Actions·API 라우트) + PostgreSQL 구성이다.
+> 배포 방식이 정해지면 그 플랫폼의 절차를 이 장에 추가한다.
 
-**사이트 저장소는 공개 저장소로 만든다.** Vercel Hobby에서 팀원 커밋도 배포되게 하려는 것이다. 그래서 비밀값은 절대 코드·커밋에 넣지 않는다. `.env`, `.env*.local`은 `.gitignore`로 제외돼 있다.
+### 12-1. Git 브랜치 전략 (PMR-001)
 
-| 브랜치 | 용도 | Vercel |
-|---|---|---|
-| `main` | 배포본. PR로만 합친다 | **Production** (실제 주소) |
-| `dev` | 통합 브랜치. feature PR이 모이는 곳 | **Preview** (dev 전용 미리보기 주소) |
-| `feature/*` | 기능·수정 작업. 예: `feature/privacy-contact` | PR을 열면 **Preview** |
+| 브랜치 | 용도 |
+|---|---|
+| `main` | 배포본. PR로만 합친다 |
+| `dev` | 통합 브랜치. feature PR이 모이는 곳 |
+| `feature/*` | 기능·수정 작업. 예: `feature/privacy-contact` |
 
 - **작업 흐름**
   1. `dev`에서 `feature/*` 브랜치를 만든다.
   2. `feature/*` → `dev` PR을 열고 리뷰한 뒤 합친다.
   3. 배포할 때 `dev` → `main` PR을 연다.
-- **첫 커밋**: `main`에 만들고, 바로 `dev` 브랜치를 생성한다.
-
-**Vercel 연결 방법**
-1. Vercel → Add New → Project → GitHub 사이트 저장소를 Import한다. Framework는 Next.js로 자동 인식된다.
-2. Settings → Git → **Production Branch = `main`**으로 둔다(기본값). `main`이 아닌 브랜치 push와 PR은 자동으로 Preview 배포된다.
-3. (선택) Settings → Domains에서 `dev` 브랜치에 고정 미리보기 주소를 연결한다. 예: `dev-jarvis.vercel.app` → Git Branch: `dev`
-4. Settings → Environment Variables에서 값마다 적용 환경(Production / Preview)을 고른다(12-2 표).
-5. GitHub 저장소 → Settings → Branches에서 `main`·`dev`에 보호 규칙을 건다. 직접 push를 막고 PR 필수로 하는 것을 권장한다.
-
-**⚠ Preview DB는 반드시 분리한다**
-- `vercel-build`는 배포할 때마다 `prisma migrate deploy`를 실행한다. Preview도 마찬가지다.
-- Preview가 운영 DB를 가리키면, 아직 합치지 않은 feature 브랜치의 마이그레이션이 **운영 DB에 먼저 적용된다**.
-- Neon에서 `dev` 브랜치(DB 복제본)를 만들고, Preview 환경의 `DATABASE_URL`·`DIRECT_URL`은 그 주소로 넣는다.
+- 사이트 저장소는 공개 저장소다(https://github.com/rlagmlcks213-png/jarvis-support-site). 그래서 비밀값은 절대 코드·커밋에 넣지 않는다. `.env`, `.env*.local`은 `.gitignore`로 제외돼 있다.
+- 권장: GitHub → Settings → Branches에서 `main`·`dev`에 "PR 필수" 보호 규칙을 건다.
 
 ### 12-2. 환경변수 — 어디에 무엇을 넣나
 
@@ -505,28 +492,27 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 - 사이트 저장소 주소가 아니다.
 - 다운로드 URL은 `https://github.com/{GITHUB_REPO}/releases/...`로 시작해야 등록된다.
 
-**① Vercel (사이트 저장소 프로젝트)**
+**① 배포 서버 (사이트를 실행하는 곳)**
 
-| 이름 | Production | Preview | 비고 |
-|---|---|---|---|
-| `DATABASE_URL` | Neon 운영 pooled 주소 | Neon **dev 브랜치** pooled 주소 | |
-| `DIRECT_URL` | Neon 운영 direct 주소 | Neon dev 브랜치 direct 주소 | 마이그레이션용 |
-| `SESSION_SECRET` | 32자 이상 무작위 | Production과 **다른** 값 | 바꾸면 전원 로그아웃 |
-| `SYNC_SECRET` | 무작위 (앱 저장소 Secret과 **같은 값**) | 넣지 않아도 됨 | 자동 등록은 운영 주소로만 호출 |
-| `CRON_SECRET` | 16자 이상 무작위 | 넣지 않아도 됨 | Cron은 Production에서만 실행 |
-| `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` | 같은 값 | 빌드 시 화면에도 들어가는 공개 정보 |
-| `SITE_URL` | 운영 주소 (`https://…`) | dev 미리보기 주소 | 알림 메일 속 링크 |
-| `STORAGE_PROVIDER` | `blob` | `blob` | |
-| `BLOB_READ_WRITE_TOKEN` | Blob 연결 시 자동 | 자동 | 직접 입력하지 않음 |
-| `MAIL_PROVIDER` + `GMAIL_USER`·`GMAIL_APP_PASSWORD` 또는 `RESEND_API_KEY`·`MAIL_FROM` | 실제 발송 설정 | `console` 권장 | Preview에서 실제 메일이 나가지 않게 |
+| 이름 | 값 | 비고 |
+|---|---|---|
+| `DATABASE_URL` | 운영 PostgreSQL 주소 | 커넥션 풀러가 있으면 그 주소 |
+| `DIRECT_URL` | 운영 PostgreSQL 직접 연결 주소 | 마이그레이션용. 풀러가 없으면 `DATABASE_URL`과 같은 값 |
+| `SESSION_SECRET` | 32자 이상 무작위 | 바꾸면 전원 로그아웃 |
+| `SYNC_SECRET` | 무작위 (앱 저장소 Secret과 **같은 값**) | `change-me` 금지 |
+| `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` | 빌드 시 화면에도 들어가는 공개 정보 |
+| `SITE_URL` | 운영 주소 (`https://…`) | 알림 메일 속 링크 |
+| `UPLOAD_DIR` | 재배포해도 유지되는 디스크 경로 | 비우면 프로젝트 폴더의 `uploads/` |
+| `MAIL_PROVIDER` + `GMAIL_USER`·`GMAIL_APP_PASSWORD` 또는 `RESEND_API_KEY`·`MAIL_FROM` | 실제 발송 설정 | 정하기 전에는 `console` |
 
-- **Vercel에 넣지 않는 값**: `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD`. seed 때 로컬 터미널에서만 쓴다(12-3).
+- **배포 서버에 넣지 않는 값**: `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD`. seed 때 로컬 터미널에서만 쓴다(12-3).
+- 테스트용 서버를 따로 둔다면 DB와 `SESSION_SECRET`은 운영과 다른 값을 쓴다.
 
 **② 앱 저장소 GitHub Actions Secrets** (설치 파일 빌드·릴리스 워크플로가 쓰는 값)
 
 | 이름(예시) | 값 | 용도 |
 |---|---|---|
-| `SYNC_SECRET` | Vercel Production의 `SYNC_SECRET`과 **같은 값** | `Authorization: Bearer` 헤더 |
+| `SYNC_SECRET` | 배포 서버의 `SYNC_SECRET`과 **같은 값** | `Authorization: Bearer` 헤더 |
 | `SITE_URL` | 사이트 운영 주소 (`https://…`, 끝에 `/` 없이) | `POST {SITE_URL}/api/releases/sync` 호출 대상 |
 
 - GitHub Release 생성에는 Actions 기본 제공 `GITHUB_TOKEN`을 쓴다(별도 등록 불필요).
@@ -538,71 +524,71 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | `DATABASE_URL`, `DIRECT_URL` | `localhost:54329`(db:local) 또는 `5432`(Docker) |
 | `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | 로컬 테스트용(`admin`/`admin`). 배포 seed 때는 터미널에서 임시로 지정 |
 | `SESSION_SECRET` | 로컬용 무작위 (운영 값과 다르게) |
-| `STORAGE_PROVIDER` | `local` |
 | `MAIL_PROVIDER` | `console` |
-| `CRON_SECRET`, `SYNC_SECRET`, `GITHUB_REPO` | 로컬 테스트용. `SYNC_SECRET`·`GITHUB_REPO`는 `.env.local`에 둬도 됨 |
+| `SYNC_SECRET`, `GITHUB_REPO` | 로컬 테스트용. `.env.local`에 둬도 됨 |
 
-### 12-3. 배포 순서
+### 12-3. 운영 서버 실행 순서 (플랫폼 공통)
 
-1. 사이트 저장소(공개)를 GitHub에 만들고 `main`·`dev`를 push한다(12-1).
-2. Neon에서 프로젝트를 만든다. 운영 DB(main 브랜치)와 `dev` 브랜치를 만들고, 각각 pooled / direct 주소를 받는다.
-3. Vercel에서 프로젝트를 Import하고, Storage → **Blob**을 만들어 연결한다.
-4. Vercel 환경변수를 12-2 ① 표대로 넣는다.
-5. `main`을 배포한다. `vercel-build`가 `prisma migrate deploy`로 운영 DB 테이블을 만든다.
-6. **관리자 계정 seed (로컬에서 한 번만)**
-   - 운영 DB의 **direct 주소**로 실행한다.
-   - 관리자 비밀번호(12자 이상)는 Vercel이나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
-   - Windows PowerShell 예시:
+배포 플랫폼이 무엇이든, 사이트를 운영하려면 아래가 필요하다.
 
-   ```powershell
-   $env:DATABASE_URL = "<Neon 운영 DIRECT 주소>"
-   $env:DIRECT_URL   = "<Neon 운영 DIRECT 주소>"
-   $env:ADMIN_INITIAL_LOGIN_ID = "<공용 로그인 아이디>"
-   $env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
-   npx prisma db seed
-   Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
-   ```
+**필요한 것**
+- Node.js 20 이상이 도는 서버(또는 Next.js를 지원하는 호스팅)
+- PostgreSQL
+- 스크린샷을 저장할 **지워지지 않는 디스크**(`UPLOAD_DIR`). 재배포·재시작 때 파일이 사라지는 환경이면 별도 저장소 연결이 필요하다(현재 범위 밖).
+- HTTPS. 운영 환경에서는 쿠키에 `Secure`를 붙이므로 http에서는 관리자 로그인이 유지되지 않는다.
 
-   - 터미널에서 지정한 값이 `.env`보다 우선한다. 그래서 로컬 `.env` 파일은 바꾸지 않아도 된다.
-   - seed는 이미 같은 아이디가 있으면 아무것도 바꾸지 않는다(다시 실행해도 비밀번호가 바뀌지 않음).
-   - 비밀번호는 팀 내부에서만 안전하게 공유한다. 사이트에 비밀번호 변경 화면은 없다(SFR-006 ①).
-   - Preview(dev 브랜치 DB)에서도 관리자가 필요하면, dev 브랜치 direct 주소로 같은 방법을 한 번 더 실행한다.
-7. 앱 저장소에 Actions Secrets(12-2 ②)를 넣고, 릴리스 워크플로가 sync API를 호출하도록 한다.
-8. 12-5 확인 목록을 점검한다.
+**실행**
+
+```bash
+npm ci
+npx prisma migrate deploy      # DB 테이블 만들기·갱신 (DIRECT_URL 사용)
+npm run build
+npm start                      # 기본 포트 3000 (PORT 환경변수로 변경)
+```
+
+**관리자 계정 seed (로컬에서 한 번만)**
+- 운영 DB의 **직접 연결 주소**로 실행한다.
+- 관리자 비밀번호(12자 이상)는 서버나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
+- Windows PowerShell 예시:
+
+```powershell
+$env:DATABASE_URL = "<운영 DB 직접 연결 주소>"
+$env:DIRECT_URL   = "<운영 DB 직접 연결 주소>"
+$env:ADMIN_INITIAL_LOGIN_ID = "<공용 로그인 아이디>"
+$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+npx prisma db seed
+Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
+```
+
+- 터미널에서 지정한 값이 `.env`보다 우선한다(확인 완료). 그래서 로컬 `.env` 파일은 바꾸지 않아도 된다.
+- seed는 이미 같은 아이디가 있으면 아무것도 바꾸지 않는다.
+- 비밀번호는 팀 내부에서만 안전하게 공유한다. 사이트에 비밀번호 변경 화면은 없다(SFR-006 ①).
 
 ### 12-4. 스크린샷 업로드 크기 — 어떻게 설정돼 있나
 
 | 항목 | 현재 설정 |
 |---|---|
-| 업로드 경로 | **Server Action** (Route Handler 아님)<br>`createBugAction` / `updateBugAction` (`src/server/actions/public.ts`)이 **FormData**를 받는다<br>파일은 base64 변환 없이 원본 바이트로 전송한다 |
-| 파일 크기 상한 (앱) | **4MB** — `ATTACHMENT_MAX_BYTES` (`src/lib/constants.ts`)<br>① 화면: `BugForm.tsx`에서 파일을 고를 때 거부<br>② 서버: `services/bugs.ts`의 `checkAttachment`에서 다시 거부 (형식·매직 바이트 검사 포함) |
-| 요청 본문 상한 (Next.js) | **5mb** — `next.config.ts`의 `experimental.serverActions.bodySizeLimit`<br>Server Action 기본값은 1MB라서 올렸다. 4MB 파일 + 글 내용(최대 수십 KB)을 담을 수 있다 |
-| 요청 본문 상한 (Vercel) | **4.5MB** — Vercel Functions의 플랫폼 고정 한도(설정으로 못 바꿈). 배포 환경의 실제 상한은 이 값이다<br>4MB 파일 + 글 내용 + multipart 오버헤드는 이 안에 들어간다 |
+| 업로드 경로 | **Server Action** (`createBugAction` / `updateBugAction`)이 **FormData**로 원본 파일을 받는다(base64 변환 없음) |
+| 파일 크기 상한 (앱) | **4MB** — `ATTACHMENT_MAX_BYTES` (`src/lib/constants.ts`). 화면(`BugForm.tsx`)과 서버(`services/bugs.ts`)에서 각각 확인 |
+| 요청 본문 상한 (Next.js) | **5mb** — `next.config.ts`의 `experimental.serverActions.bodySizeLimit` (기본값 1MB에서 올림) |
+| 저장 위치 | `UPLOAD_DIR/bugs/{UUID}.{확장자}`. 화면에는 `GET /api/uploads/bugs/{파일명}`으로 보여준다 |
 
-### 12-5. Vercel에서 확인할 것
+### 12-5. 배포한 뒤 확인할 것
 
-- [ ] **업로드 실측**
-  - 3.5~3.9MB 이미지로 버그 신고를 작성하고, 수정해서 교체도 해 본다.
-  - 성공하면 DB `attachment_url`이 `https://….blob.vercel-storage.com/bugs/…`인지 확인한다.
-- [ ] **4.5MB 초과 요청**
-  - Vercel이 앱에 도달하기 전에 `413 FUNCTION_PAYLOAD_TOO_LARGE`로 막는다. 이때는 우리 오류 문구가 아니라 일반 오류가 뜬다.
-  - 정상 화면에서는 4MB 초과 파일을 고르는 순간 거부되므로 생기지 않아야 한다.
-  - 상한을 올리면 안 된다. 올리려면 Blob 클라이언트 직접 업로드 방식으로 바꿔야 한다(현재 범위 밖).
-- [ ] **Blob 파일 삭제**
-  - 글을 삭제하거나 스크린샷을 교체·삭제한 뒤, Vercel Storage → Blob 목록에서 예전 파일이 지워졌는지 본다.
-  - 삭제가 실패하면 서버 로그에 `[storage] 첨부 파일 삭제 실패`가 남는다.
-- [ ] **`STORAGE_PROVIDER=blob` 누락**
-  - 빠지면 운영에서 첨부 업로드가 "운영 환경에서는 STORAGE_PROVIDER=blob" 오류로 거부된다(의도된 동작).
-- [ ] **Cron 등록**
-  - Vercel → Settings → Cron Jobs에 `/api/cron/cleanup`(매일 18:00 UTC = 03:00 KST)이 보이는지 확인한다.
-  - [Run]을 눌러 200과 `removed` 건수를 확인한다.
-  - Cron은 Production 배포에서만 돈다. Hobby 플랜은 하루 1번까지 가능하고, 실행 시각이 그 시간대 안에서 조금 밀릴 수 있다.
-  - `CRON_SECRET`이 없으면 500, 토큰이 틀리면 401이다.
+- [ ] **요청 크기 제한**
+  - 호스팅이나 리버스 프록시(nginx 등)에도 요청 크기 제한이 있으면 **5MB 이상**으로 맞춘다.
+  - 3.5~3.9MB 이미지로 버그 신고를 작성·교체해 보고, 이미지가 보이는지 확인한다.
+- [ ] **업로드 폴더 유지**
+  - 서버를 재시작·재배포한 뒤에도 예전 스크린샷이 보이는지 확인한다.
+  - 글 삭제·스크린샷 교체 뒤 `UPLOAD_DIR/bugs/`에서 예전 파일이 지워졌는지 확인한다.
+- [ ] **IP 확인**
+  - 리버스 프록시 뒤라면 프록시가 `X-Forwarded-For`를 넘겨주는지 확인한다. 30초 재등록 제한·비밀번호 대입 제한이 IP 기준이다.
 - [ ] **쿠키**
-  - 운영 주소(HTTPS)에서 관리자 로그인 후 `jarvis_admin_session` 쿠키에 Secure가 붙는지 개발자 도구로 확인한다.
+  - HTTPS 운영 주소에서 관리자 로그인 후 `jarvis_admin_session` 쿠키에 Secure가 붙는지 개발자 도구로 확인한다.
 - [ ] **seed**
-  - 배포 DB에서 `admin`/`admin` 같은 약한 비밀번호가 거부되는지 확인한다. 12자 이상이어야 계정이 만들어진다.
+  - 운영 DB에서 `admin`/`admin` 같은 약한 비밀번호가 거부되는지 확인한다.
 - [ ] **공용 계정 동시 로그인**
-  - 팀원 3명이 각자 기기에서 로그인해도 서로 로그아웃되지 않는지 운영 주소에서 한 번 확인한다.
-- [ ] **Preview DB 분리**
-  - Preview 배포의 환경변수가 Neon dev 브랜치를 가리키는지 확인한다. 운영 DB를 가리키면 안 된다.
+  - 팀원 3명이 각자 기기에서 로그인해도 서로 로그아웃되지 않는지 확인한다.
+- [ ] **개인정보 정리 주기**
+  - 정리는 요청이 들어올 때(글 등록·비밀번호 실패·관리자 대시보드) 응답 후 실행된다.
+  - 방문자가 없는 기간에도 보관 기한을 꼭 지켜야 하면, 배포 플랫폼의 예약 작업 기능으로 정리를 하루 1번 호출하는 방법을 추가 검토한다.

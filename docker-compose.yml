@@ -1,4 +1,4 @@
-# 로컬 개발용 PostgreSQL (배포 서버는 Neon 등 클라우드 Postgres 사용)
+# 로컬 개발용 PostgreSQL (배포 서버의 DB는 배포 방식이 정해지면 따로 준비)
 # 실행: docker compose up -d   /  중지: docker compose down
 # 데이터까지 지우기: docker compose down -v
 services:

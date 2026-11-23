@@ -51,7 +51,7 @@ function throwFieldErrors(errors: Record<string, string | undefined>) {
 }
 
 // ── 첨부 이미지 ────────────────────────────────────
-// 파일은 저장소(lib/storage.ts: Vercel Blob / 개발용 public/uploads)에 두고 attachment_url에는 주소만 저장한다.
+// 파일은 서버 업로드 폴더(lib/storage.ts)에 두고 attachment_url에는 주소(/api/uploads/bugs/…)만 저장한다.
 
 /** Server Action이 FormData에서 꺼낸 파일 */
 export type UploadedFile = AttachmentMeta & { bytes: Uint8Array };

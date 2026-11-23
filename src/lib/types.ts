@@ -68,7 +68,7 @@ export interface PublicBugReport {
   os: string;
   content: string; // 발생 상황
   reproSteps: string; // 재현 방법
-  attachmentUrl: string | null; // 저장소 이미지 주소 (Vercel Blob URL 또는 개발용 /uploads/bugs/…)
+  attachmentUrl: string | null; // 이미지 주소 (/api/uploads/bugs/{파일명})
   status: BugStatus;
   resolvedReleaseId: number | null;
   createdAt: ISODate;
