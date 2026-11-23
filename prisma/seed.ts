@@ -11,7 +11,7 @@ async function main() {
   if (!password || password.startsWith('change-me')) {
     throw new Error('.env의 ADMIN_INITIAL_PASSWORD를 먼저 바꿔 주세요.');
   }
-  // 로컬 DB가 아니면(배포용 Neon 등) 약한 비밀번호(admin 등)로 관리자를 만들지 않음
+  // 로컬 DB가 아니면(배포용 DB) 약한 비밀번호(admin 등)로 관리자를 만들지 않음
   const isLocalDb = /@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? '');
   if (!isLocalDb && password.length < 12) {
     throw new Error('배포 DB에는 12자 이상 관리자 비밀번호가 필요해요. (.env의 ADMIN_INITIAL_PASSWORD)');

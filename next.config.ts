@@ -8,7 +8,8 @@ const nextConfig: NextConfig = {
     GITHUB_REPO: process.env.GITHUB_REPO ?? "",
   },
   experimental: {
-    // 스크린샷(4MB 이하)을 FormData 원본으로 보냄 + 글 내용 → 여유 있게 5mb (Vercel 요청 4.5MB 제한이 실제 상한)
+    // 스크린샷(4MB 이하)을 FormData 원본으로 보냄 + 글 내용 → 여유 있게 5mb
+    // (호스팅이나 리버스 프록시에도 요청 크기 제한이 있으면 5MB 이상으로 맞출 것)
     serverActions: { bodySizeLimit: "5mb" },
   },
 };

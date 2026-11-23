@@ -43,8 +43,9 @@
 ## 기술 스택
 
 - **Next.js 15** (App Router, Server Actions) · **React 19** · **TypeScript** · **Tailwind CSS v4**
-- **Prisma 6** + **PostgreSQL** (로컬: 내장 PostgreSQL 또는 Docker / 배포: Neon)
-- 배포: **Vercel** (사이트 · Blob 스크린샷 저장소 · Cron)
+- **Prisma 6** + **PostgreSQL** (로컬: 내장 PostgreSQL 또는 Docker)
+- 스크린샷: 서버 업로드 폴더에 저장 (`UPLOAD_DIR`)
+- 배포 방식: 미정 (정해지면 문서에 추가)
 - 메일: console / Gmail SMTP / Resend 중 선택
 
 ---
@@ -87,28 +88,27 @@ npm run dev                     # http://localhost:3000 · 관리자: /admin
 
 | 이름 | 설명 |
 |---|---|
-| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소 (배포: Neon pooled / direct) |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 12자 이상만 받음. **Vercel에 넣지 않음** |
+| `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소 (DIRECT_URL은 마이그레이션용 직접 연결 주소) |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 12자 이상만 받음. **배포 서버 환경변수에 넣지 않음** |
 | `SESSION_SECRET` | 세션·열람 쿠키·캡차 서명 키 (32자 이상 무작위) |
 | `SYNC_SECRET` | 릴리스 자동 등록 API 인증 토큰 (앱 저장소 Actions Secret과 같은 값) |
-| `CRON_SECRET` | Vercel Cron 개인정보 정리 라우트 인증 토큰 |
 | `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 |
-| `STORAGE_PROVIDER`, `BLOB_READ_WRITE_TOKEN` | 스크린샷 저장소. 개발 `local`, 배포 `blob` |
+| `UPLOAD_DIR` | (선택) 스크린샷 저장 폴더. 기본값은 프로젝트 폴더의 `uploads/` |
 | `MAIL_PROVIDER`, `GMAIL_*`, `RESEND_API_KEY`, `MAIL_FROM` | 답변 알림 메일 |
 | `SITE_URL` | 메일 속 링크 주소 |
 
 - Prisma CLI는 `.env`만 읽습니다. DB 관련 값은 꼭 `.env`에 두세요.
-- Vercel·앱 저장소·로컬에 각각 어떤 값을 넣는지는 [IMPLEMENTATION.md 12-2](IMPLEMENTATION.md#12-2-환경변수--어디에-무엇을-넣나)에 정리돼 있습니다.
+- 배포 서버·앱 저장소·로컬에 각각 어떤 값을 넣는지는 [IMPLEMENTATION.md 12-2](IMPLEMENTATION.md#12-2-환경변수--어디에-무엇을-넣나)에 정리돼 있습니다.
 
 ---
 
 ## 브랜치 전략 (PMR-001)
 
-| 브랜치 | 용도 | Vercel 배포 |
-|---|---|---|
-| `main` | 배포본 | Production |
-| `dev` | 통합 브랜치 | Preview |
-| `feature/*` | 기능·수정 작업 | PR마다 Preview |
+| 브랜치 | 용도 |
+|---|---|
+| `main` | 배포본 |
+| `dev` | 통합 브랜치 |
+| `feature/*` | 기능·수정 작업 |
 
 ```bash
 git switch dev && git pull
@@ -128,7 +128,7 @@ public/images/   캐릭터·SmartScreen 이미지 (현재 임시 이미지)
 src/
   app/(public)/  공개 화면
   app/admin/     관리자 화면 (로그인 · 대시보드 · 릴리스 · 답변·상태 관리)
-  app/api/       releases/latest · releases/sync · qna/[id]/unlock · cron/cleanup
+  app/api/       releases/latest · releases/sync · qna/[id]/unlock · uploads/bugs/[name]
   middleware.ts  /admin/* 1차 확인
   server/        ★ 서버 전용 — Server Actions, 업무 로직, 인증, 제한, 메일, 정리
   lib/           repository(화면 → 서버 창구), 공용 검증, DB·저장소·메일 클라이언트
@@ -157,6 +157,6 @@ src/
 
 - [IMPLEMENTATION.md](IMPLEMENTATION.md) — 구현 현황 전체
   - 화면별 기능, DB, API·연동 규약
-  - 환경변수 구분, 배포 절차, Vercel 확인 목록
+  - 환경변수 구분, 배포할 때 확인할 점
 - 팀 결정이 필요한 항목은 코드에서 `TODO(확정 필요)`로 검색할 수 있습니다.
 - 기준 문서: 요구사항명세서 v0.2, 화면 상위설계 계획서 v0.2
