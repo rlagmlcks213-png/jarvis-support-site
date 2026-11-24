@@ -64,6 +64,10 @@ export default function PrivacyPage() {
             </table>
           </div>
           <p className="text-sm text-muted">이메일은 공개되지 않고, 관리자 화면에서도 주소 원문은 보이지 않아요.</p>
+          <p className="text-sm text-muted">
+            질문·버그 신고를 쓸 때 자동 등록 방지를 위해 Cloudflare Turnstile을 사용해요. 이 과정에서 접속 IP와 브라우저 정보가 Cloudflare로 전송될 수
+            있어요. 웹사이트 서버는 이 정보를 따로 저장하지 않아요.
+          </p>
         </Section>
 
         <Section title="2. 데스크톱 앱의 구글·Gemini 데이터">

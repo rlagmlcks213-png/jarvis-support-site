@@ -27,7 +27,7 @@
 | 화면 | 내용 |
 |---|---|
 | 대시보드 | 새 질문·미처리 버그 수, 최신 릴리스 |
-| 릴리스 관리 | GitHub Actions 자동 등록 확인, 수동 등록, 노트 수정, 해결 버그 연결, 숨김·삭제 |
+| 릴리스 관리 | GitHub webhook 자동 등록 확인, GitHub에서 최신 릴리스 가져오기, 수동 등록, 노트 수정, 해결 버그 연결, 숨김·삭제 |
 | 답변·상태 관리 | QnA 답변·숨김, 버그 상태·메모·병합, FAQ 관리, 게시물 강제 수정·삭제 |
 
 **앱 연동 API**
@@ -35,7 +35,8 @@
 | API | 용도 |
 |---|---|
 | `GET /api/releases/latest` | 데스크톱 앱이 새 버전을 확인할 때 씀. `version`은 `v1.0.2` 형식 |
-| `POST /api/releases/sync` | GitHub Actions가 새 릴리스를 등록할 때 씀 (`Bearer SYNC_SECRET`) |
+| `POST /api/releases/github-webhook` | 앱 저장소에서 릴리스를 Publish하면 GitHub webhook이 호출 → 자동 등록 (`X-Hub-Signature-256` 서명) |
+| `POST /api/releases/sync` | (선택) GitHub Actions가 새 릴리스를 직접 등록할 때 씀 (`Bearer SYNC_SECRET`) |
 | `/bugs/new?appVersion=1.0.2&os=windows11&from=tray` | 앱 트레이 메뉴 → 버그 신고 (버전·OS 자동 입력) |
 
 ---
@@ -89,10 +90,14 @@ npm run dev                     # http://localhost:3000 · 관리자: /admin
 | 이름 | 설명 |
 |---|---|
 | `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소 (DIRECT_URL은 마이그레이션용 직접 연결 주소) |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 12자 이상만 받음. **배포 서버 환경변수에 넣지 않음** |
-| `SESSION_SECRET` | 세션·열람 쿠키·캡차 서명 키 (32자 이상 무작위) |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 6자 이상만 받음. **배포 서버 환경변수에 넣지 않음** |
+| `SESSION_SECRET` | 관리자 세션·비밀글 열람 쿠키 서명 키 (32자 이상 무작위) |
 | `SYNC_SECRET` | 릴리스 자동 등록 API 인증 토큰 (앱 저장소 Actions Secret과 같은 값) |
-| `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 |
+| `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 (틀리면 webhook이 무시됨) |
+| `GITHUB_WEBHOOK_SECRET` | 앱 저장소 webhook 서명 키 (32자 이상 무작위, webhook Secret과 같은 값) |
+| `GITHUB_TOKEN` | (선택) GitHub API 토큰. 공개 저장소면 필요 없음 |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 사이트 키 (공개 값). 개발에서 비우면 테스트 키 |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 비밀 키. 개발에서 비우면 테스트 키, 운영에서 비우면 글 등록 거부 |
 | `UPLOAD_DIR` | (선택, 로컬 전용) 스크린샷 저장 폴더. 기본값은 프로젝트 폴더의 `uploads/`. Netlify에서는 자동으로 Netlify Blobs에 저장 |
 | `MAIL_PROVIDER`, `GMAIL_*`, `RESEND_API_KEY`, `MAIL_FROM` | 답변 알림 메일 |
 | `SITE_URL` | 메일 속 링크 주소 |
@@ -123,12 +128,12 @@ git switch -c feature/작업-이름
 
 ```
 prisma/          schema.prisma · migrations/ · seed.ts · seed-demo.ts
-scripts/         local-db.mjs (Docker 없이 쓰는 로컬 PostgreSQL)
+scripts/         local-db.mjs (Docker 없이 쓰는 로컬 PostgreSQL) · test-webhook.mjs (webhook 로컬 시험)
 public/images/   캐릭터·SmartScreen 이미지 (현재 임시 이미지)
 src/
   app/(public)/  공개 화면
   app/admin/     관리자 화면 (로그인 · 대시보드 · 릴리스 · 답변·상태 관리)
-  app/api/       releases/latest · releases/sync · qna/[id]/unlock · uploads/bugs/[name]
+  app/api/       releases/latest · releases/github-webhook · releases/sync · qna/[id]/unlock · uploads/bugs/[name]
   middleware.ts  /admin/* 1차 확인
   server/        ★ 서버 전용 — Server Actions, 업무 로직, 인증, 제한, 메일, 정리
   lib/           repository(화면 → 서버 창구), 공용 검증, DB·저장소·메일 클라이언트
@@ -145,7 +150,7 @@ src/
 - 관리자 권한은 3단계로 확인합니다: middleware → 관리자 레이아웃 → 모든 Server Action의 `requireAdmin()`.
 - 관리자 로그인은 5회 실패 시 5분 잠금입니다. 계정이 공용 1개이므로 잠금도 공용입니다.
 - 글 비밀번호(QnA 열람·수정·삭제, 버그 수정·삭제)는 같은 IP·같은 글에서 10분 안에 5회 틀리면 10분 동안 차단합니다.
-- 비로그인 글쓰기에는 캡차와 30초 재등록 제한을 적용합니다. 출력은 React 기본 이스케이프만 씁니다.
+- 비로그인 글쓰기에는 Cloudflare Turnstile과 30초 재등록 제한을 적용합니다. 출력은 React 기본 이스케이프만 씁니다.
 - 공개 응답에서는 비밀번호 해시·이메일·알림 상태·관리자 메모를 DB 조회 단계에서 제외합니다.
 - 스크린샷은 png/jpeg/gif/webp만 받고(파일 내용까지 검사), 4MB 이하입니다.
 - 이메일은 알림을 보낸 뒤 즉시 삭제합니다. 발송에 실패한 이메일은 7일, IP 해시는 1일 뒤 자동 삭제합니다.

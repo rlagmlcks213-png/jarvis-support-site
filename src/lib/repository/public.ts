@@ -1,19 +1,18 @@
 // 공개 화면용 repository (클라이언트). 실제 처리는 서버(Server Action / API 라우트)에서 한다.
 // 비밀번호 확인·DB 접근은 모두 서버에서만 일어나고, 여기서는 호출과 오류 변환만 한다.
 import * as A from "@/server/actions/public";
-import type { CaptchaAnswer, CaptchaChallenge } from "@/server/captcha";
+import type { CaptchaAnswer } from "@/server/captcha";
 import type { BugCreateInput, BugEditInput, QuestionCreateInput, QuestionEditInput } from "../post-validation";
 import type { AttachmentUpload, BugStatus, QuestionDetail } from "../types";
 import { RepoError } from "./errors";
 import { mutate, unwrap } from "./client";
 
-export type { CaptchaAnswer, CaptchaChallenge };
+export type { CaptchaAnswer };
 export type { BugListItem } from "@/server/services/bugs";
 export type { ReleaseWithBugs } from "@/server/services/releases";
 export type { SearchResults } from "@/server/services/misc";
 
 export const getViewer = () => unwrap(A.getViewerAction());
-export const getCaptcha = () => unwrap(A.getCaptchaAction());
 
 // ── QnA ──────────────────────────────────────────
 export const getQuestions = (p: { page: number }) => unwrap(A.listQuestionsAction(p.page));

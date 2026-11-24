@@ -4,15 +4,18 @@ import { createHash } from "node:crypto";
 import { sessionSecret } from "./env";
 
 /**
- * 요청 IP의 해시 (post_attempt.ip_hash). IP 원문은 저장하지 않는다.
+ * 요청한 사람의 IP. 찾지 못하면 null.
  * - Netlify: x-nf-client-connection-ip (Netlify가 직접 넣는 헤더라 사용자가 조작할 수 없음)
  * - 그 밖의 리버스 프록시 뒤: x-forwarded-for의 첫 값
  * ⚠ 프록시 없이 직접 노출된 서버라면 x-forwarded-for는 조작 가능하므로, 배포 환경의 신뢰할 수 있는 헤더로 바꿀 것.
  */
-export async function getIpHash(): Promise<string> {
+export async function getClientIp(): Promise<string | null> {
   const h = await headers();
-  const ip =
-    h.get("x-nf-client-connection-ip") ||
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
+  return h.get("x-nf-client-connection-ip") || h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+}
+
+/** 요청 IP의 해시 (post_attempt.ip_hash). IP 원문은 저장하지 않는다. */
+export async function getIpHash(): Promise<string> {
+  const ip = (await getClientIp()) ?? "unknown";
   return createHash("sha256").update(`${sessionSecret()}:${ip}`).digest("hex");
 }

@@ -9,6 +9,7 @@ import {
   deleteRelease,
   errorMessage,
   getFixedBugs,
+  importGithubReleases,
   linkBugsToRelease,
   setReleaseHidden,
   simulateGithubSync,
@@ -129,7 +130,7 @@ function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         }}
       >
         <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-muted">
-          GitHub Actions 자동 등록이 실패했을 때만 사용해요. 파일은 먼저 GitHub Release에 올라가 있어야 해요.
+          자동 등록(webhook·가져오기 버튼)이 실패했을 때만 사용해요. 파일은 먼저 GitHub Release에 올라가 있어야 해요.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="버전" htmlFor="m-version" error={errors.version} hint="예: v1.0.2">
@@ -368,6 +369,7 @@ export default function AdminReleasesPage() {
   const { data, error, reload } = useRepo(adminGetReleases, []);
   const [syncOpen, setSyncOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -375,15 +377,34 @@ export default function AdminReleasesPage() {
   const editing = data?.find((r) => r.releaseId === editingId) ?? null;
   const deleting = data?.find((r) => r.releaseId === deletingId) ?? null;
 
+  // webhook을 놓쳤을 때 — GitHub의 최근 릴리스를 직접 조회해 빠진 버전을 등록
+  const importFromGithub = async () => {
+    setImporting(true);
+    try {
+      const s = await importGithubReleases();
+      const failed = s.failed.length ? ` / 실패 ${s.failed.length}개(${s.failed.map((f) => `${f.version}: ${f.reason}`).join(", ")})` : "";
+      toast(`새로 등록 ${s.created.length}개 / 이미 있음 ${s.existing}개${failed}`, s.failed.length ? "error" : undefined);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">릴리스 관리</h1>
-          <p className="mt-1 text-sm text-muted">설치 파일은 GitHub Releases에 있어요. 자동 등록된 릴리스에 해결된 버그를 연결해 주세요.</p>
+          <p className="mt-1 text-sm text-muted">
+            설치 파일은 GitHub Releases에 있어요. 앱 저장소에서 릴리스를 Publish하면 webhook으로 자동 등록돼요. 자동 등록된 릴리스에 해결된 버그를 연결해 주세요.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" onClick={() => setSyncOpen(true)}>⟳ GitHub 릴리스 동기화(시뮬레이션)</button>
+          <button className="btn-primary" onClick={importFromGithub} disabled={importing} title="webhook을 놓쳤을 때 GitHub의 최근 릴리스 10개 중 빠진 버전을 등록해요">
+            {importing ? "가져오는 중…" : "↓ GitHub에서 최신 릴리스 가져오기"}
+          </button>
+          <button className="btn-secondary" onClick={() => setSyncOpen(true)}>⟳ GitHub 릴리스 동기화(시뮬레이션)</button>
           <button className="btn-secondary" onClick={() => setManualOpen(true)}>수동 등록</button>
         </div>
       </div>

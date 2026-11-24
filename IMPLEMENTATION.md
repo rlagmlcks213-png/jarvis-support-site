@@ -76,7 +76,11 @@
   - 기록: `post_attempt` (`action=password_fail`, `target_type=question|bug_report`).
   - 관리자는 제한 없이 통과한다.
 - **스팸 방지** (SER-002 ④) **[팀 결정]**:
-  - 덧셈 캡차: 서명 토큰 방식, 10분 유효.
+  - **Cloudflare Turnstile** (QnA 질문 작성·버그 신고 작성에만. 수정·삭제·관리자 화면에는 없음):
+    - 위젯(`components/Captcha.tsx`)이 받은 토큰을 서버(`server/captcha.ts`)가 Cloudflare `siteverify`로 확인한다 (타임아웃 5초, `remoteip` 포함).
+    - 토큰은 한 번만 쓸 수 있다. 화면은 제출할 때마다(성공·실패 모두) 위젯을 리셋해 새 토큰을 받는다.
+    - Cloudflare 호출이 실패하면 통과시키지 않는다("잠시 후 다시 시도해 주세요").
+    - 개발 환경에서 키가 없으면 Cloudflare 공식 테스트 키(항상 통과)를 쓴다. 운영에서 비밀 키가 없거나 테스트 키면 등록을 거부하고 서버 로그에 원인을 남긴다.
   - 같은 IP 30초 재등록 제한: 질문·버그를 각각 따로 센다. IP는 해시로만 저장한다.
 - **입력 길이** **[미정]**:
 
@@ -158,7 +162,7 @@
 
 - 계정: DB `admin` 테이블. 회원가입, 관리자 추가, 비밀번호 변경 화면은 없다 (SFR-006 ①).
   - `npm run db:seed`가 `.env`의 `ADMIN_INITIAL_LOGIN_ID` / `ADMIN_INITIAL_PASSWORD`로 1명을 만든다.
-  - 로컬 테스트 계정은 `admin` / `admin`이다. 배포 DB에서는 12자 미만 비밀번호를 거부한다.
+  - 로컬 테스트 계정은 `admin` / `admin`이다. 배포 DB에서는 6자 미만 비밀번호를 거부한다.
 - **관리자 계정은 개발팀 공용 1개다.** 팀원 3명이 같은 아이디·비밀번호로 로그인한다. seed는 1명만 만들고, 여러 명을 만드는 기능은 두지 않는다.
   - **로그인 잠금도 공용이다.** 잠금은 계정 단위(`admin.failed_count` / `locked_until`)라서, 한 명이 5회 틀리면 전원이 5분 동안 로그인할 수 없다.
   - 여러 기기에서 동시에 로그인해도 서로 로그아웃되지 않는다. 세션이 서버 저장 없는 서명 쿠키라서 기기마다 따로 유지된다.
@@ -209,10 +213,16 @@
 
 - 사이트는 설치 파일을 업로드받지 않는다. 정보(버전·주소·해시·크기·노트)만 등록한다.
 
-**등록 방법 3가지**
-1. **자동 등록 (운영)**: GitHub Actions → `POST /api/releases/sync`. `source = GITHUB`로 저장하고 바로 공개한다.
-2. **동기화 시뮬레이션 (시연용)**: 다음 버전 요청 JSON을 미리 보여주고, 자동 등록과 같은 검증으로 등록한다.
-3. **수동 등록 (자동 실패 대비)**: `source = MANUAL`, 등록 관리자 ID를 기록한다. GitHub 릴리스 주소를 비우면 태그 주소를 자동으로 만든다.
+**등록 방법**
+1. **Webhook 자동 등록 (운영 기본)**: 앱 저장소에서 GitHub Release를 Publish하면 GitHub이 `POST /api/releases/github-webhook`을 보낸다. 사이트가 릴리스의 `.exe` 자산 정보를 읽어 `source = GITHUB`로 저장하고 바로 공개한다. 설치 파일을 손으로 올리든 Actions로 올리든 동작한다.
+   - 변환 규칙(`server/github-release.ts`): 버전 ← `tag_name`, 배포일 ← `published_at`(Asia/Seoul 날짜), 노트 ← `body`(2자 미만이면 "변경 사항은 GitHub 릴리스 페이지를 참고해 주세요.", 3000자 초과면 잘라서 `…`), SHA-256 ← 자산의 `digest`(`sha256:…`).
+   - `.exe` 자산 선택: 업로드가 끝난(`state=uploaded`) `.exe` 중 이름에 `setup`이 들어간 것 우선, 그다음 가장 큰 파일.
+   - draft·prerelease는 등록하지 않는다. `digest`가 없으면 등록하지 않고 수동 등록을 안내한다.
+   - GitHub에서 릴리스를 **삭제**하면 같은 버전의 GitHub 자동 등록 릴리스를 **숨긴다**(삭제하지 않음, 연결 버그 상태는 그대로). 릴리스 본문을 **수정**하면 노트만 갱신한다.
+2. **GitHub에서 최신 릴리스 가져오기 (webhook을 놓쳤을 때)**: 관리자 화면 버튼. GitHub API로 최근 릴리스 10개를 조회해 DB에 없는 정식 릴리스를 webhook과 같은 규칙으로 등록하고, "새로 등록 N개 / 이미 있음 N개 / 실패 N개(사유)"를 토스트로 보여준다.
+3. **`POST /api/releases/sync` (선택)**: GitHub Actions가 직접 호출하는 기존 방식. 그대로 유지한다.
+4. **동기화 시뮬레이션 (시연용)**: 다음 버전 요청 JSON을 미리 보여주고, 자동 등록과 같은 검증으로 등록한다.
+5. **수동 등록 (자동 실패 대비)**: `source = MANUAL`, 등록 관리자 ID를 기록한다. GitHub 릴리스 주소를 비우면 태그 주소를 자동으로 만든다.
 
 **등록 검증** (화면·서버 공용)
 
@@ -266,7 +276,8 @@ Enum 값:
 | 메서드·주소 | 용도 | 인증 | 응답 |
 |---|---|---|---|
 | `GET /api/releases/latest` | 데스크톱 앱 새 버전 확인 (SFR-005 ④) | 없음 | `{ version: "v1.0.2", releasedAt, downloadUrl, sha256 }`. 없으면 404. `Cache-Control: no-store`. 앱은 `package.json`의 `1.0.2` 앞에 `v`를 붙여 비교한다 |
-| `POST /api/releases/sync` | GitHub Actions 자동 등록 | `Authorization: Bearer {SYNC_SECRET}` (timing-safe 비교) | 201 등록 / 401 인증 실패 / 409 중복 / 422 형식 오류(필드별 `errors`) / 500 SYNC_SECRET 미설정 |
+| `POST /api/releases/github-webhook` | 앱 저장소 GitHub webhook (Releases 이벤트) 자동 등록 | `X-Hub-Signature-256` HMAC 서명 (`GITHUB_WEBHOOK_SECRET`, timing-safe 비교) | 아래 규약 참고 |
+| `POST /api/releases/sync` | GitHub Actions 자동 등록 (선택) | `Authorization: Bearer {SYNC_SECRET}` (timing-safe 비교) | 201 등록 / 401 인증 실패 / 409 중복 / 422 형식 오류(필드별 `errors`) / 500 SYNC_SECRET 미설정 |
 | `POST /api/qna/[id]/unlock` | 비밀글 비밀번호 확인 | 글 비밀번호 | 성공하면 열람 쿠키 발급. 실패 제한 적용 시 429 |
 | `GET /api/uploads/bugs/[name]` | 버그 신고 스크린샷 이미지 | 없음 | 업로드 폴더의 이미지. 서버가 만든 UUID 파일명만 허용, `nosniff`·`CSP default-src 'none'` |
 
@@ -285,6 +296,28 @@ Enum 값:
   "githubReleaseUrl": "https://github.com/OWNER/REPO/releases/tag/v1.0.2"
 }
 ```
+
+**`/api/releases/github-webhook` 규약**
+
+- 본문은 원문 그대로 읽어 서명을 확인한 뒤 JSON으로 바꾼다. 서명 = `"sha256=" + HMAC-SHA256(원문, GITHUB_WEBHOOK_SECRET)`의 hex.
+- `payload.repository.full_name`이 `GITHUB_REPO`와 다르면(대소문자 무시) 무시한다.
+- `.exe` 자산이 아직 없으면(Actions가 릴리스를 먼저 만들고 파일을 나중에 올리는 경우) GitHub API로 최대 3번(2초 간격) 다시 조회한다. `GITHUB_TOKEN`이 있으면 `Authorization: Bearer`로 붙인다(공개 저장소면 없어도 됨).
+
+| 상황 | 응답 |
+|---|---|
+| `GITHUB_WEBHOOK_SECRET` 미설정 | 500 |
+| 서명 없음·불일치 | 401 |
+| `X-GitHub-Event: ping` | 200 `{ ok: true, message: "pong" }` |
+| `release` 외 이벤트, 다른 저장소, 처리하지 않는 action | 202 (무시) |
+| `published` → 새로 등록 | 201 `{ ok, status: "created", release }` |
+| `published` → 이미 있는 버전 | 200 `status: "duplicate"` |
+| `published` → draft·prerelease / 설치 파일이 아직 없음 | 202 `status: "skipped"` / `"no_asset"` |
+| `published` → 형식 오류·SHA-256 없음 | 422 `status: "invalid"`, 필드별 `errors` |
+| `deleted` | 숨김 처리하면 200, 대상이 없으면 202 |
+| `edited` | 노트를 갱신하면 200, 대상이 없으면 202 |
+
+- 응답·로그에 비밀값과 서명을 남기지 않는다.
+- 로컬 시험: `npm run dev`를 띄운 뒤 `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPO`를 dev 서버와 같게 지정하고 `node scripts/test-webhook.mjs` (로컬 주소에서만 실행된다. 끝나면 시험 버전 `v9.9.x`를 지운다).
 
 **데스크톱 앱 트레이 → 버그 신고 연동 규약** (SFR-004 ⑤ · 앱 팀 전달용 고정 형식)
 
@@ -344,7 +377,7 @@ src/
   | 필드 | 내용 |
   |---|---|
   | `input` | 글 내용 JSON |
-  | `captcha` | 캡차 JSON (작성 때만) |
+  | `captcha` | Turnstile 토큰 JSON `{ token }` (작성 때만) |
   | `attachment` | File |
   | `attachmentMode` | `keep` / `remove` / `replace` |
   | `bugId`, `password` | 수정 때만 |
@@ -358,7 +391,7 @@ src/
   | 재등록 제한 | 30초 |
   | 글 비밀번호 실패 제한 | 5회 / 10분 → 10분 차단 |
   | 열람 쿠키 | 30분 |
-  | 캡차 유효 시간 | 10분 |
+  | Turnstile 테스트 키 | 개발 환경 기본값 (`TURNSTILE_TEST_SITE_KEY`, `TURNSTILE_TEST_SECRET_KEY`) |
   | 첨부 파일 | **4MB** |
   | 목록 페이지당 글 수 | 5개 |
   | `FAILED_EMAIL_RETENTION_DAYS` | 7 **[미정]** |
@@ -367,7 +400,7 @@ src/
 
 **Server Actions 목록**
 - 공개:
-  - 공통: getViewer, getCaptcha
+  - 공통: getViewer
   - QnA: listQuestions, createQuestion, getQuestionForEdit, updateQuestion, deleteQuestion
   - 버그: listBugs, getBug, createBug(FormData), getBugForEdit, updateBug(FormData), deleteBug
   - 조회: getReleases, getReleaseNotes, getFaqs, search
@@ -375,7 +408,7 @@ src/
   - 인증·대시보드: login, logout, dashboard
   - QnA: adminQuestions, saveAnswer, resendNotification, deleteAnswer, setQuestionHidden
   - 버그: adminBugs, updateBugStatus, updateBugMemo, mergeBug
-  - 릴리스: adminReleases, buildSyncPayload, simulateSync, createManualRelease, updateReleaseNote, setReleaseHidden, linkBugs, deleteRelease, fixedBugs
+  - 릴리스: adminReleases, importGithubReleases, buildSyncPayload, simulateSync, createManualRelease, updateReleaseNote, setReleaseHidden, linkBugs, deleteRelease, fixedBugs
   - FAQ: adminFaqs, createFaq, updateFaq, deleteFaq, moveFaq
   - 게시물: forceUpdatePost, deleteAnyPost
 
@@ -386,10 +419,14 @@ src/
 | 이름 | 설명 |
 |---|---|
 | `DATABASE_URL`, `DIRECT_URL` | PostgreSQL. 로컬은 `localhost:54329`(db:local) 또는 `5432`(Docker). 배포 서버는 그 서버의 PostgreSQL 주소 (DIRECT_URL = 마이그레이션용 직접 연결) |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | seed 때만 쓴다. `change-me…`는 거부하고, 배포 DB는 12자 이상만 받는다 |
-| `SESSION_SECRET` | 32자 이상 무작위. 세션·열람 쿠키·캡차 서명 키 |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | seed 때만 쓴다. `change-me…`는 거부하고, 배포 DB는 6자 이상만 받는다 |
+| `SESSION_SECRET` | 32자 이상 무작위. 관리자 세션·비밀글 열람 쿠키 서명 키 |
 | `SYNC_SECRET` | `/api/releases/sync` 인증 토큰. **서버 전용** |
-| `GITHUB_REPO` | **설치 파일(.exe)이 올라가는 "앱 저장소"(공개)**의 `OWNER/REPO`. 사이트 저장소가 아니다. 다운로드 URL 검증·링크에 쓴다 |
+| `GITHUB_REPO` | **설치 파일(.exe)이 올라가는 "앱 저장소"(공개)**의 `OWNER/REPO`. 사이트 저장소가 아니다. 다운로드 URL 검증·링크, webhook 저장소 확인, GitHub API 조회에 쓴다 |
+| `GITHUB_WEBHOOK_SECRET` | GitHub webhook 서명 키 (32자 이상 무작위, 앱 저장소 webhook의 Secret과 같은 값). **서버 전용** |
+| `GITHUB_TOKEN` | (선택) GitHub API 토큰. 공개 저장소면 필요 없음. 있으면 API 호출 한도가 늘어난다. **서버 전용** |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 사이트 키. **공개 값**(빌드 결과물에 들어감). 개발 환경에서 비우면 테스트 키 |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 비밀 키. **서버 전용**. 개발 환경에서 비우면 테스트 키, 운영에서 비우면 글 등록 거부 |
 | `UPLOAD_DIR` | (선택) 스크린샷 저장 폴더. 기본값: 프로젝트 폴더의 `uploads/`. 운영에서는 재배포해도 지워지지 않는 경로로 |
 | `MAIL_PROVIDER` | `console` / `gmail` / `resend` |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail SMTP |
@@ -450,10 +487,10 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | 개인정보처리방침 문의 이메일 | 미정 ("준비 중 · QnA에 남겨 주세요"로 표시) |
 | 실제 메일 발송 | Gmail 앱 비밀번호로 실발송 1회 확인 필요 |
 | 캐릭터·SmartScreen 이미지 | 임시 이미지 (같은 파일명으로 교체) |
-| 캡차 | 덧셈 캡차. 스팸이 많으면 Turnstile / reCAPTCHA 검토 |
+| 캡차 | Cloudflare Turnstile로 교체 완료. 운영 키 발급·Netlify 등록 필요(12-6 ⑥) |
 | 저장 시 HTML 이스케이프 | 원문 저장 + 출력 시 React 이스케이프. 다른 클라이언트가 HTML로 그리면 재검토 |
 | 배포 | Netlify로 결정 (12-6). 운영 DB 서비스(Neon/Supabase) 최종 선택은 팀 확정 필요 |
-| GitHub Actions 워크플로 | 앱 저장소에서 `.exe` 빌드 → Release 생성 → sync 호출 (사이트 쪽 API는 준비 완료) |
+| GitHub Actions 워크플로 | 필수 아님. 릴리스 Publish → webhook으로 자동 등록된다(12-6 ⑦). Actions로 `.exe`를 빌드해 Release에 올려도 같은 webhook이 처리한다. sync 호출은 선택 |
 
 **만들지 않는 것** (문서 위반)
 - 공개 화면의 관리자 버튼
@@ -489,7 +526,7 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 ### 12-2. 환경변수 — 어디에 무엇을 넣나
 
 **`GITHUB_REPO`는 설치 파일(.exe)이 올라가는 "앱 저장소"(공개)의 `OWNER/REPO`다.**
-- 사이트 저장소 주소가 아니다.
+- 사이트 저장소 주소가 아니다. **틀리면 webhook이 "다른 저장소"로 보고 무시하고, 다운로드 URL 검증도 실패한다.**
 - 다운로드 URL은 `https://github.com/{GITHUB_REPO}/releases/...`로 시작해야 등록된다.
 
 **① 배포 서버 (사이트를 실행하는 곳)**
@@ -501,6 +538,10 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | `SESSION_SECRET` | 32자 이상 무작위 | 바꾸면 전원 로그아웃 |
 | `SYNC_SECRET` | 무작위 (앱 저장소 Secret과 **같은 값**) | `change-me` 금지 |
 | `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` | 빌드 시 화면에도 들어가는 공개 정보 |
+| `GITHUB_WEBHOOK_SECRET` | 32자 이상 무작위 (앱 저장소 webhook Secret과 **같은 값**) | 비밀값 |
+| `GITHUB_TOKEN` | (선택) GitHub 토큰 | 공개 앱 저장소면 넣지 않아도 됨 |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Turnstile 사이트 키 | 공개 값. 빌드 시점에 고정 |
+| `TURNSTILE_SECRET_KEY` | Turnstile 비밀 키 | 비밀값. 없거나 테스트 키면 글 등록 거부 |
 | `SITE_URL` | 운영 주소 (`https://…`) | 알림 메일 속 링크 |
 | `UPLOAD_DIR` | **Netlify에서는 넣지 않음** | Netlify는 Blobs에 저장. 직접 운영하는 서버일 때만 재배포해도 유지되는 디스크 경로 |
 | `MAIL_PROVIDER` + `GMAIL_USER`·`GMAIL_APP_PASSWORD` 또는 `RESEND_API_KEY`·`MAIL_FROM` | 실제 발송 설정 | 정하기 전에는 `console` |
@@ -508,7 +549,10 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 - **배포 서버에 넣지 않는 값**: `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD`. seed 때 로컬 터미널에서만 쓴다(12-3).
 - 테스트용 서버를 따로 둔다면 DB와 `SESSION_SECRET`은 운영과 다른 값을 쓴다.
 
-**② 앱 저장소 GitHub Actions Secrets** (설치 파일 빌드·릴리스 워크플로가 쓰는 값)
+**② 앱 저장소 GitHub 설정**
+
+- **Webhook (기본)**: Settings → Webhooks에 사이트의 `/api/releases/github-webhook`을 등록하고 Secret에 `GITHUB_WEBHOOK_SECRET`과 같은 값을 넣는다(12-6 ⑦). Actions Secrets는 필요 없다.
+- **Actions에서 sync를 직접 호출할 때만** 아래 Secrets를 넣는다.
 
 | 이름(예시) | 값 | 용도 |
 |---|---|---|
@@ -525,7 +569,8 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | 로컬 테스트용(`admin`/`admin`). 배포 seed 때는 터미널에서 임시로 지정 |
 | `SESSION_SECRET` | 로컬용 무작위 (운영 값과 다르게) |
 | `MAIL_PROVIDER` | `console` |
-| `SYNC_SECRET`, `GITHUB_REPO` | 로컬 테스트용. `.env.local`에 둬도 됨 |
+| `SYNC_SECRET`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET` | 로컬 테스트용. `.env.local`에 둬도 됨 |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | 비워 두면 Cloudflare 테스트 키(항상 통과) |
 
 ### 12-3. 운영 서버 실행 순서 (플랫폼 공통)
 
@@ -548,14 +593,14 @@ npm start                      # 기본 포트 3000 (PORT 환경변수로 변경
 
 **관리자 계정 seed (로컬에서 한 번만)**
 - 운영 DB의 **직접 연결 주소**로 실행한다.
-- 관리자 비밀번호(12자 이상)는 서버나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
+- 관리자 비밀번호(6자 이상)는 서버나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
 - Windows PowerShell 예시:
 
 ```powershell
 $env:DATABASE_URL = "<운영 DB 직접 연결 주소>"
 $env:DIRECT_URL   = "<운영 DB 직접 연결 주소>"
 $env:ADMIN_INITIAL_LOGIN_ID = "<공용 로그인 아이디>"
-$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+$env:ADMIN_INITIAL_PASSWORD = "<6자 이상 비밀번호>"
 npx prisma db seed
 Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
 ```
@@ -618,7 +663,7 @@ $env:DATABASE_URL = "<Neon Direct 주소>"
 $env:DIRECT_URL   = "<Neon Direct 주소>"
 npx prisma migrate deploy
 $env:ADMIN_INITIAL_LOGIN_ID = "<추측하기 어려운 아이디>"
-$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+$env:ADMIN_INITIAL_PASSWORD = "<6자 이상 비밀번호>"
 npx prisma db seed
 Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
 ```
@@ -636,19 +681,23 @@ Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:AD
 | `DIRECT_URL` | Neon Direct 주소 |
 | `SESSION_SECRET` | 32자 이상 무작위 (운영 전용) |
 | `SYNC_SECRET` | 무작위 (앱 저장소 Actions Secret과 같은 값) |
-| `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` |
+| `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` (**설치 파일이 올라가는 저장소**) |
+| `GITHUB_WEBHOOK_SECRET` | 32자 이상 무작위 (Secret 체크) |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Turnstile 사이트 키 (**Secret 체크 해제** — 공개 값) |
+| `TURNSTILE_SECRET_KEY` | Turnstile 비밀 키 (Secret 체크) |
+| `SECRETS_SCAN_OMIT_KEYS` | `MAIL_PROVIDER,GITHUB_REPO,SITE_URL,NEXT_PUBLIC_TURNSTILE_SITE_KEY` |
 | `SITE_URL` | `https://<프로젝트명>.netlify.app` (끝에 `/` 없이) |
 | `MAIL_PROVIDER` 등 | 메일 설정 (정하기 전에는 `console`) |
 
 - 넣지 않는 값: `ADMIN_INITIAL_*`, `UPLOAD_DIR`, `NETLIFY`(Netlify가 자동으로 넣음).
-- `GITHUB_REPO`·`UPLOAD_STORAGE`는 빌드 시점에 코드에 고정된다. 바꾸면 **Deploys → Trigger deploy → Clear cache and deploy**로 다시 배포한다.
+- `SECRETS_SCAN_OMIT_KEYS`: Netlify 비밀값 검사가 빌드 결과물에 들어가는 공개 값을 비밀 노출로 오인해 빌드를 멈추지 않게 한다. `NEXT_PUBLIC_TURNSTILE_SITE_KEY`는 화면 코드에 들어가는 공개 값이므로 반드시 포함한다.
+- `GITHUB_REPO`·`NEXT_PUBLIC_TURNSTILE_SITE_KEY`·`UPLOAD_STORAGE`는 빌드 시점에 코드에 고정된다. 바꾸면 **Deploys → Trigger deploy → Clear cache and deploy**로 다시 배포한다.
 - 무작위 값 만들기: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
 
 4. **Deploy**. 끝나면 `https://<프로젝트명>.netlify.app`에서 확인한다. 주소를 바꾸려면 Site configuration → Change project name (바꾸면 `SITE_URL`과 앱 저장소 Secret도 같이 바꾼다).
 
 **③ 앱 저장소 연결**
-- 앱 저장소 GitHub → Settings → Secrets and variables → Actions:
-  - `SITE_URL` = Netlify 주소, `SYNC_SECRET` = Netlify에 넣은 값과 동일.
+- 릴리스 자동 등록은 ⑦의 webhook으로 한다. Actions에서 `/api/releases/sync`를 직접 호출하는 경우에만 앱 저장소 Settings → Secrets and variables → Actions에 `SITE_URL`(Netlify 주소), `SYNC_SECRET`(Netlify 값과 동일)을 넣는다.
 - 데스크톱 앱의 새 버전 확인 주소도 `https://<프로젝트명>.netlify.app/api/releases/latest`로 맞춘다.
 
 **④ 로컬 개발은 그대로**
@@ -659,3 +708,23 @@ Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:AD
 - PR을 열면 Netlify가 미리보기 주소(Deploy Preview)를 만든다. 환경변수를 Production에만 넣었다면 미리보기는 DB 연결 없이 뜨므로 화면 확인용으로만 본다. 미리보기에서 글쓰기까지 시험하려면 Neon 브랜치(별도 DB)를 만들어 Deploy Previews 컨텍스트에 따로 넣는다. **운영 DB를 미리보기에 연결하지 않는다.**
 - 함수 실행 시간 상한이 있으므로(기본 수십 초) 메일 발송이 오래 걸리는 SMTP보다 Resend가 안정적이다.
 - 배포 후 12-5 체크리스트를 확인한다.
+
+**⑥ Cloudflare Turnstile (자동 등록 방지)**
+1. dash.cloudflare.com → Turnstile → **Add widget**.
+2. 호스트 이름에 `<프로젝트명>.netlify.app`과 `localhost`를 추가하고, 모드는 **Managed**로 둔다.
+3. 사이트 키와 비밀 키를 복사해 Netlify 환경변수 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`(Secret 체크 해제), `TURNSTILE_SECRET_KEY`(Secret)에 넣는다.
+4. `SECRETS_SCAN_OMIT_KEYS`에 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`를 추가한다(위 표).
+5. 사이트 키는 빌드 시점에 고정되므로 **다시 배포**한다.
+6. 확인: `/qna` 질문 작성과 `/bugs/new` 신고에서 위젯이 뜨고 등록되는지 본다.
+
+**⑦ GitHub 릴리스 webhook**
+1. **Netlify 프로젝트가 Public인지 확인**한다. (Site configuration → Access & security에서 비밀번호 보호 등이 켜져 있으면 GitHub webhook이 막힌다.)
+2. Netlify 환경변수 `GITHUB_WEBHOOK_SECRET`을 넣고, `GITHUB_REPO`가 **앱 저장소**인지 확인한 뒤 재배포한다.
+3. 앱 저장소 GitHub → Settings → Webhooks → **Add webhook**:
+   - Payload URL: `https://<프로젝트명>.netlify.app/api/releases/github-webhook`
+   - Content type: `application/json`
+   - Secret: Netlify의 `GITHUB_WEBHOOK_SECRET`과 같은 값
+   - Events: "Let me select individual events" → **Releases**만
+4. 저장 후 Recent Deliveries에서 ping이 **200**인지 확인한다.
+5. 시험: 앱 저장소에 `.exe`를 첨부한 릴리스를 Publish → 사이트 `/releases`, `/download`, `/api/releases/latest`에 반영되는지 본다.
+6. 반영되지 않으면 Recent Deliveries의 응답 본문을 확인하고, 관리자 화면의 **GitHub에서 최신 릴리스 가져오기** 버튼으로 다시 등록한다.
