@@ -6,3 +6,6 @@ next-env.d.ts
 .env*.local
 .env
 /uploads
+
+# Netlify CLI 로컬 폴더
+.netlify

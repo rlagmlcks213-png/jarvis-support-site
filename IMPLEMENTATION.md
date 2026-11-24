@@ -23,8 +23,8 @@
 | 사용자 | **일반 사용자**: 회원가입 없음. 닉네임 + 글 비밀번호(+ 선택 이메일)로 글을 쓰고, 수정·삭제·비밀글 열람 때 그 비밀번호만 입력 (SFR-004)<br>**관리자**: 미리 등록된 계정만 `/admin`에서 로그인. 로그인하면 모든 관리 기능을 쓰고, 공개 화면의 글도 비밀번호 없이 열람·수정·삭제 (SFR-006) |
 | 스택 | Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Prisma 6 · PostgreSQL |
 | 인증 | 관리자만 로그인. HMAC 서명 쿠키 세션(외부 인증 라이브러리 없음) |
-| 파일 | 설치 파일(.exe): **GitHub Releases에만** 둔다 (SFR-005 ①, SER-002 ⑤)<br>스크린샷: 서버 업로드 폴더(`UPLOAD_DIR`)에 두고 DB에는 주소만 저장 |
-| 배포 | 미정. 플랫폼 전용 설정 없이 순수 Next.js(프론트엔드 + 백엔드) 프로젝트로 유지한다 (12장) |
+| 파일 | 설치 파일(.exe): **GitHub Releases에만** 둔다 (SFR-005 ①, SER-002 ⑤)<br>스크린샷: Netlify Blobs(배포) 또는 서버 업로드 폴더 `UPLOAD_DIR`(로컬)에 두고 DB에는 주소만 저장 |
+| 배포 | **Netlify** + 외부 PostgreSQL(Neon 권장) + Netlify Blobs(스크린샷). 절차는 12-6 |
 | 상태 | 기능 구현 완료, 로컬 실행·체크리스트 검증 완료. 글 데이터는 비워 둔 상태(관리자 계정만 있음) |
 
 ---
@@ -452,7 +452,7 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | 캐릭터·SmartScreen 이미지 | 임시 이미지 (같은 파일명으로 교체) |
 | 캡차 | 덧셈 캡차. 스팸이 많으면 Turnstile / reCAPTCHA 검토 |
 | 저장 시 HTML 이스케이프 | 원문 저장 + 출력 시 React 이스케이프. 다른 클라이언트가 HTML로 그리면 재검토 |
-| 배포 | 방식 미정. 정해지면 12장에 해당 플랫폼 절차 추가 |
+| 배포 | Netlify로 결정 (12-6). 운영 DB 서비스(Neon/Supabase) 최종 선택은 팀 확정 필요 |
 | GitHub Actions 워크플로 | 앱 저장소에서 `.exe` 빌드 → Release 생성 → sync 호출 (사이트 쪽 API는 준비 완료) |
 
 **만들지 않는 것** (문서 위반)
@@ -468,8 +468,8 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 
 ## 12. 배포할 때 할 일
 
-> **배포 방식은 아직 정하지 않았다.** 이 프로젝트에는 특정 호스팅 플랫폼 전용 설정(설정 파일, 빌드 스크립트, SDK)이 없다. 순수 Next.js 프론트엔드 + 백엔드(Server Actions·API 라우트) + PostgreSQL 구성이다.
-> 배포 방식이 정해지면 그 플랫폼의 절차를 이 장에 추가한다.
+> **배포 방식: Netlify** (2026-11-24 결정). 구체적인 절차는 **12-6**에 있다.
+> Netlify 전용으로 들어간 것은 `netlify.toml`, 스크린샷 저장소(Netlify Blobs, `@netlify/blobs`), IP 헤더(`x-nf-client-connection-ip`), Prisma `binaryTargets` 뿐이다. 나머지는 순수 Next.js 그대로라 다른 플랫폼으로 옮겨도 12-3 절차로 돌릴 수 있다.
 
 ### 12-1. Git 브랜치 전략 (PMR-001)
 
@@ -502,7 +502,7 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 | `SYNC_SECRET` | 무작위 (앱 저장소 Secret과 **같은 값**) | `change-me` 금지 |
 | `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` | 빌드 시 화면에도 들어가는 공개 정보 |
 | `SITE_URL` | 운영 주소 (`https://…`) | 알림 메일 속 링크 |
-| `UPLOAD_DIR` | 재배포해도 유지되는 디스크 경로 | 비우면 프로젝트 폴더의 `uploads/` |
+| `UPLOAD_DIR` | **Netlify에서는 넣지 않음** | Netlify는 Blobs에 저장. 직접 운영하는 서버일 때만 재배포해도 유지되는 디스크 경로 |
 | `MAIL_PROVIDER` + `GMAIL_USER`·`GMAIL_APP_PASSWORD` 또는 `RESEND_API_KEY`·`MAIL_FROM` | 실제 발송 설정 | 정하기 전에는 `console` |
 
 - **배포 서버에 넣지 않는 값**: `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD`. seed 때 로컬 터미널에서만 쓴다(12-3).
@@ -534,7 +534,7 @@ npm run dev             # http://localhost:3000  · 관리자: /admin 직접 입
 **필요한 것**
 - Node.js 20 이상이 도는 서버(또는 Next.js를 지원하는 호스팅)
 - PostgreSQL
-- 스크린샷을 저장할 **지워지지 않는 디스크**(`UPLOAD_DIR`). 재배포·재시작 때 파일이 사라지는 환경이면 별도 저장소 연결이 필요하다(현재 범위 밖).
+- 스크린샷 저장소. Netlify는 Blobs를 자동으로 쓴다(12-6). 직접 운영하는 서버라면 **지워지지 않는 디스크**(`UPLOAD_DIR`)를 쓰고 `UPLOAD_STORAGE=fs`로 빌드한다.
 - HTTPS. 운영 환경에서는 쿠키에 `Secure`를 붙이므로 http에서는 관리자 로그인이 유지되지 않는다.
 
 **실행**
@@ -571,7 +571,8 @@ Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:AD
 | 업로드 경로 | **Server Action** (`createBugAction` / `updateBugAction`)이 **FormData**로 원본 파일을 받는다(base64 변환 없음) |
 | 파일 크기 상한 (앱) | **4MB** — `ATTACHMENT_MAX_BYTES` (`src/lib/constants.ts`). 화면(`BugForm.tsx`)과 서버(`services/bugs.ts`)에서 각각 확인 |
 | 요청 본문 상한 (Next.js) | **5mb** — `next.config.ts`의 `experimental.serverActions.bodySizeLimit` (기본값 1MB에서 올림) |
-| 저장 위치 | `UPLOAD_DIR/bugs/{UUID}.{확장자}`. 화면에는 `GET /api/uploads/bugs/{파일명}`으로 보여준다 |
+| 저장 위치 | Netlify: Blobs 스토어 `bug-screenshots`의 `{UUID}.{확장자}` / 로컬: `UPLOAD_DIR/bugs/{UUID}.{확장자}`. 화면에는 둘 다 `GET /api/uploads/bugs/{파일명}`으로 보여준다 |
+| 플랫폼 상한 | Netlify 함수 요청 본문 6MB → 5mb 설정이 그 안에 들어온다 |
 
 ### 12-5. 배포한 뒤 확인할 것
 
@@ -579,10 +580,10 @@ Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:AD
   - 호스팅이나 리버스 프록시(nginx 등)에도 요청 크기 제한이 있으면 **5MB 이상**으로 맞춘다.
   - 3.5~3.9MB 이미지로 버그 신고를 작성·교체해 보고, 이미지가 보이는지 확인한다.
 - [ ] **업로드 폴더 유지**
-  - 서버를 재시작·재배포한 뒤에도 예전 스크린샷이 보이는지 확인한다.
-  - 글 삭제·스크린샷 교체 뒤 `UPLOAD_DIR/bugs/`에서 예전 파일이 지워졌는지 확인한다.
+  - 재배포한 뒤에도 예전 스크린샷이 보이는지 확인한다.
+  - 글 삭제·스크린샷 교체 뒤 예전 파일이 지워졌는지 확인한다(Netlify: 프로젝트 화면 Blobs → `bug-screenshots`).
 - [ ] **IP 확인**
-  - 리버스 프록시 뒤라면 프록시가 `X-Forwarded-For`를 넘겨주는지 확인한다. 30초 재등록 제한·비밀번호 대입 제한이 IP 기준이다.
+  - 30초 재등록 제한·비밀번호 대입 제한이 IP 기준이다. 버그 신고를 30초 안에 두 번 등록해 거부되는지 확인한다(Netlify는 `x-nf-client-connection-ip` 사용).
 - [ ] **쿠키**
   - HTTPS 운영 주소에서 관리자 로그인 후 `jarvis_admin_session` 쿠키에 Secure가 붙는지 개발자 도구로 확인한다.
 - [ ] **seed**
@@ -592,3 +593,69 @@ Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:AD
 - [ ] **개인정보 정리 주기**
   - 정리는 요청이 들어올 때(글 등록·비밀번호 실패·관리자 대시보드) 응답 후 실행된다.
   - 방문자가 없는 기간에도 보관 기한을 꼭 지켜야 하면, 배포 플랫폼의 예약 작업 기능으로 정리를 하루 1번 호출하는 방법을 추가 검토한다.
+
+### 12-6. Netlify 배포 절차
+
+**구성**
+
+| 역할 | 서비스 |
+|---|---|
+| 사이트(화면 + Server Actions + API) | Netlify (Next.js 자동 인식, OpenNext 어댑터) |
+| DB | 외부 PostgreSQL — **Neon 권장** (무료 플랜). Supabase도 같은 방식 |
+| 스크린샷 | Netlify Blobs (별도 가입·키 없음. Netlify 빌드에서 자동 선택) |
+
+**① DB 만들기 (Neon 기준)**
+1. https://neon.tech 에서 프로젝트를 만든다. 리전은 가까운 곳(예: AWS Asia Pacific — Singapore)으로 고른다.
+2. Connection string을 두 개 복사한다.
+   - **Pooled connection**(호스트에 `-pooler`가 붙은 주소) → `DATABASE_URL`
+   - **Direct connection** → `DIRECT_URL`
+   - 두 주소 모두 끝에 `?sslmode=require`가 있어야 한다.
+   - 서버리스 함수는 요청마다 연결을 새로 열 수 있어서, 앱은 반드시 풀러 주소를 쓴다.
+3. 내 PC에서 테이블을 만들고 관리자 계정을 넣는다 (12-3의 PowerShell 방법 그대로, 주소만 Neon **직접 연결 주소**로).
+
+```powershell
+$env:DATABASE_URL = "<Neon Direct 주소>"
+$env:DIRECT_URL   = "<Neon Direct 주소>"
+npx prisma migrate deploy
+$env:ADMIN_INITIAL_LOGIN_ID = "<추측하기 어려운 아이디>"
+$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+npx prisma db seed
+Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
+```
+
+- 나중에 스키마를 바꾸면(새 마이그레이션) 배포 전에 같은 방법으로 `npx prisma migrate deploy`만 다시 실행한다. 빌드 때 자동으로 돌리지 않는 이유: 미리보기(PR) 배포가 운영 DB를 바꾸지 않게 하기 위해서.
+
+**② Netlify 프로젝트 만들기**
+1. Netlify → **Add new project → Import an existing project → GitHub** → 사이트 저장소 선택.
+2. 배포 브랜치: `main`. 빌드 설정은 `netlify.toml`에서 읽는다 (`npm run build`, Node 22). 화면에서 바꿀 것 없음.
+3. 첫 배포 전에 **Site configuration → Environment variables**에 아래 값을 넣는다. (Scopes: 전체 / Deploy contexts: Production 기준)
+
+| 이름 | 값 |
+|---|---|
+| `DATABASE_URL` | Neon Pooled 주소 |
+| `DIRECT_URL` | Neon Direct 주소 |
+| `SESSION_SECRET` | 32자 이상 무작위 (운영 전용) |
+| `SYNC_SECRET` | 무작위 (앱 저장소 Actions Secret과 같은 값) |
+| `GITHUB_REPO` | 앱 저장소 `OWNER/REPO` |
+| `SITE_URL` | `https://<프로젝트명>.netlify.app` (끝에 `/` 없이) |
+| `MAIL_PROVIDER` 등 | 메일 설정 (정하기 전에는 `console`) |
+
+- 넣지 않는 값: `ADMIN_INITIAL_*`, `UPLOAD_DIR`, `NETLIFY`(Netlify가 자동으로 넣음).
+- `GITHUB_REPO`·`UPLOAD_STORAGE`는 빌드 시점에 코드에 고정된다. 바꾸면 **Deploys → Trigger deploy → Clear cache and deploy**로 다시 배포한다.
+- 무작위 값 만들기: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
+
+4. **Deploy**. 끝나면 `https://<프로젝트명>.netlify.app`에서 확인한다. 주소를 바꾸려면 Site configuration → Change project name (바꾸면 `SITE_URL`과 앱 저장소 Secret도 같이 바꾼다).
+
+**③ 앱 저장소 연결**
+- 앱 저장소 GitHub → Settings → Secrets and variables → Actions:
+  - `SITE_URL` = Netlify 주소, `SYNC_SECRET` = Netlify에 넣은 값과 동일.
+- 데스크톱 앱의 새 버전 확인 주소도 `https://<프로젝트명>.netlify.app/api/releases/latest`로 맞춘다.
+
+**④ 로컬 개발은 그대로**
+- `npm run dev`는 Netlify가 아니므로 스크린샷을 예전처럼 `uploads/` 폴더에 저장한다(`UPLOAD_STORAGE=fs`).
+- Netlify Blobs까지 로컬에서 시험하려면 Netlify CLI의 `netlify dev`를 쓴다(선택).
+
+**⑤ 알아둘 점**
+- PR을 열면 Netlify가 미리보기 주소(Deploy Preview)를 만든다. 환경변수를 Production에만 넣었다면 미리보기는 DB 연결 없이 뜨므로 화면 확인용으로만 본다. 미리보기에서 글쓰기까지 시험하려면 Neon 브랜치(별도 DB)를 만들어 Deploy Previews 컨텍스트에 따로 넣는다. **운영 DB를 미리보기에 연결하지 않는다.**
+- 함수 실행 시간 상한이 있으므로(기본 수십 초) 메일 발송이 오래 걸리는 SMTP보다 Resend가 안정적이다.
+- 배포 후 12-5 체크리스트를 확인한다.
