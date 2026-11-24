@@ -35,8 +35,15 @@ export const POST_ATTEMPT_RETENTION_DAYS = 1;
 /** 개인정보처리방침 문의처. TODO(확정 필요): 팀 연락 이메일 (비워 두면 "준비 중"으로 표시) */
 export const PRIVACY_CONTACT_EMAIL = "";
 
-/** 캡차 유효 시간 */
-export const CAPTCHA_TTL_MINUTES = 10;
+/**
+ * Cloudflare Turnstile 공식 테스트 키 (항상 통과). 공개된 값이라 코드에 둬도 된다.
+ * 개발 환경에서 NEXT_PUBLIC_TURNSTILE_SITE_KEY / TURNSTILE_SECRET_KEY가 없을 때만 쓴다. 운영에서는 거부한다(server/env.ts).
+ */
+export const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+export const TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
+/** 위젯에 쓸 사이트 키 (NEXT_PUBLIC_ 값은 빌드 때 클라이언트 코드에 박힌다). 운영에서 비어 있으면 위젯이 설정 오류를 안내한다. */
+export const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV === "production" ? "" : TURNSTILE_TEST_SITE_KEY);
 
 /**
  * 스크린샷 첨부 상한: 4MB — 파일은 서버 업로드 폴더(lib/storage.ts)에 두고 DB에는 주소만 저장.

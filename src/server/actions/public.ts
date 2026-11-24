@@ -5,7 +5,7 @@ import { LIST_PAGE_SIZE } from "@/lib/constants";
 import { BUG_STATUSES, type BugOs, type BugStatus } from "@/lib/types";
 import type { QuestionCreateInput, QuestionEditInput } from "@/lib/post-validation";
 import { getAdminSession, isAdmin } from "../auth";
-import { issueCaptcha, type CaptchaAnswer } from "../captcha";
+import type { CaptchaAnswer } from "../captcha";
 import { getIpHash } from "../request";
 import { bool, id, obj, page, run, str } from "../run";
 import { RepoError } from "@/lib/repository/errors";
@@ -14,10 +14,8 @@ import * as bugs from "../services/bugs";
 import * as releases from "../services/releases";
 import * as misc from "../services/misc";
 
-const captchaOf = (v: unknown): CaptchaAnswer => {
-  const o = obj(v);
-  return { token: str(o.token, 2000), answer: str(o.answer, 5) };
-};
+/** Turnstile 토큰 (Cloudflare 기준 최대 2048자) */
+const captchaOf = (v: unknown): CaptchaAnswer => ({ token: str(obj(v).token, 2048) });
 const auth = async (password: unknown): Promise<qna.PostAuth> => ({
   password: str(password, 100) || undefined,
   isAdmin: await isAdmin(),
@@ -30,10 +28,6 @@ export async function getViewerAction() {
     const s = await getAdminSession();
     return { isAdmin: !!s, name: s?.name ?? null };
   });
-}
-
-export async function getCaptchaAction() {
-  return run(issueCaptcha);
 }
 
 // ── QnA ──────────────────────────────────────────
@@ -82,7 +76,7 @@ export async function deleteQuestionAction(questionId: unknown, password: unknow
 
 // ── 버그 신고 ─────────────────────────────────────
 // 버그 신고 작성·수정은 FormData로 받는다 (스크린샷 원본 파일을 base64 없이 그대로 전송)
-//   input: 글 내용 JSON · captcha: 캡차 JSON(작성) · attachment: File · attachmentMode: keep | remove | replace (수정)
+//   input: 글 내용 JSON · captcha: Turnstile 토큰 JSON(작성) · attachment: File · attachmentMode: keep | remove | replace (수정)
 function formOf(v: unknown): FormData {
   if (!(v instanceof FormData)) throw new RepoError("잘못된 요청이에요.", "VALIDATION");
   return v;

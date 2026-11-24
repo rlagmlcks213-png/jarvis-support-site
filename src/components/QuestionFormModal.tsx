@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
-import Captcha from "./Captcha";
+import Captcha, { type CaptchaHandle } from "./Captcha";
 import { Field } from "./ui";
 import { RepoError, errorMessage, type CaptchaAnswer } from "@/lib/repository";
 import {
@@ -48,6 +48,7 @@ export default function QuestionFormModal(props: Props) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaAnswer | null>(null);
+  const captchaRef = useRef<CaptchaHandle>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -69,7 +70,7 @@ export default function QuestionFormModal(props: Props) {
     let errs: FieldErrors;
     if (mode === "create") {
       errs = validateQuestionCreate(v);
-      if (!captcha) errs.captcha = "자동 등록 방지 문제를 풀어 주세요.";
+      if (!captcha) errs.captcha = "자동 등록 방지 확인을 완료해 주세요.";
     } else {
       const ev = validateQuestionEdit({ ...v, newEmail: v.email });
       errs = { ...ev, email: ev.newEmail };
@@ -100,6 +101,8 @@ export default function QuestionFormModal(props: Props) {
       setFormError(errorMessage(err));
     } finally {
       setBusy(false);
+      // Turnstile 토큰은 한 번만 쓸 수 있다 — 서버로 보냈으면 결과와 상관없이 새로 받는다
+      captchaRef.current?.reset();
     }
   };
 
@@ -176,7 +179,7 @@ export default function QuestionFormModal(props: Props) {
           </span>
         </label>
 
-        {mode === "create" && <Captcha onChange={setCaptcha} error={errors.captcha} />}
+        {mode === "create" && <Captcha ref={captchaRef} onChange={setCaptcha} error={errors.captcha} />}
         {formError && (
           <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
             {formError}

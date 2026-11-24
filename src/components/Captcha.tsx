@@ -1,61 +1,124 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { getCaptcha, type CaptchaAnswer, type CaptchaChallenge } from "@/lib/repository";
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
+import type { CaptchaAnswer } from "@/lib/repository";
+import { TURNSTILE_SITE_KEY } from "@/lib/constants";
 
 /**
- * 자동 등록 방지 (간단한 덧셈). 문제는 서버가 내고, 정답 확인도 서버에서 한다.
- * TODO(확정 필요): 스팸이 많아지면 Cloudflare Turnstile / reCAPTCHA로 교체
+ * 자동 등록 방지 — Cloudflare Turnstile 위젯 (외부 패키지 없이 공식 스크립트를 직접 로드).
+ * 토큰은 서버(server/captcha.ts)가 Cloudflare에 확인하고, 한 번만 쓸 수 있다.
+ * → 부모는 제출할 때마다(성공·실패 모두) ref.reset()으로 새 토큰을 받게 해야 한다.
  */
-export default function Captcha({ onChange, error }: { onChange: (value: CaptchaAnswer | null) => void; error?: string }) {
+
+const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+
+interface TurnstileApi {
+  render(container: HTMLElement, options: Record<string, unknown>): string;
+  reset(widgetId: string): void;
+  remove(widgetId: string): void;
+}
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
+// 스크립트는 페이지당 한 번만 로드하고, 이미 있으면 재사용한다
+let scriptPromise: Promise<void> | null = null;
+function loadTurnstile(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  if (scriptPromise) return scriptPromise;
+  scriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${SCRIPT_SRC}"]`);
+    const script = existing ?? document.createElement("script");
+    script.addEventListener("load", () => resolve());
+    script.addEventListener("error", () => {
+      scriptPromise = null; // 다음 마운트에서 다시 시도
+      script.remove();
+      reject(new Error("turnstile script load failed"));
+    });
+    if (!existing) {
+      script.src = SCRIPT_SRC;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  });
+  return scriptPromise;
+}
+
+export interface CaptchaHandle {
+  /** 위젯을 초기화해 새 토큰을 받게 한다 (onChange(null)도 함께 호출) */
+  reset(): void;
+}
+
+interface Props {
+  onChange: (value: CaptchaAnswer | null) => void;
+  error?: string;
+}
+
+const Captcha = forwardRef<CaptchaHandle, Props>(function Captcha({ onChange, error }, ref) {
   const id = useId();
-  const [challenge, setChallenge] = useState<CaptchaChallenge | null>(null);
-  const [loadError, setLoadError] = useState(false);
-  const [value, setValue] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<string | null>(null);
+  const onChangeRef = useRef(onChange);
+  const [loadError, setLoadError] = useState("");
 
-  const refresh = () => {
-    setValue("");
-    setLoadError(false);
-    onChange(null);
-    getCaptcha()
-      .then(setChallenge)
-      .catch(() => setLoadError(true));
-  };
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
-  useEffect(refresh, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let cancelled = false;
+    if (!TURNSTILE_SITE_KEY) {
+      setLoadError("자동 등록 방지 설정이 아직 안 돼 있어요. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    loadTurnstile()
+      .then(() => {
+        if (cancelled || !boxRef.current || !window.turnstile) return;
+        widgetId.current = window.turnstile.render(boxRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          language: "ko",
+          callback: (token: string) => onChangeRef.current({ token }),
+          "expired-callback": () => onChangeRef.current(null),
+          "error-callback": () => onChangeRef.current(null),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("자동 등록 방지 위젯을 불러오지 못했어요. 새로고침해 주세요.");
+      });
+    return () => {
+      cancelled = true;
+      if (widgetId.current && window.turnstile) window.turnstile.remove(widgetId.current);
+      widgetId.current = null;
+    };
+  }, []);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      reset() {
+        onChangeRef.current(null);
+        if (widgetId.current && window.turnstile) window.turnstile.reset(widgetId.current);
+      },
+    }),
+    [],
+  );
+
+  const message = error || loadError;
   return (
     <div>
-      <label htmlFor={id} className="label">
+      <p id={`${id}-label`} className="label">
         자동 등록 방지<span className="ml-0.5 text-danger" aria-hidden>*</span>
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-lg bg-surface-muted px-3 py-2 font-mono text-sm font-semibold select-none" aria-live="polite">
-          {loadError ? "문제를 못 불러왔어요" : challenge ? challenge.question : "…"}
-        </span>
-        <input
-          id={id}
-          inputMode="numeric"
-          className={`input w-24 ${error ? "input-error" : ""}`}
-          value={value}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${id}-error` : undefined}
-          disabled={!challenge}
-          onChange={(e) => {
-            const v = e.target.value.replace(/\D/g, "").slice(0, 3);
-            setValue(v);
-            onChange(challenge && v ? { token: challenge.token, answer: v } : null);
-          }}
-        />
-        <button type="button" className="btn-ghost btn-sm" onClick={refresh} aria-label="새 문제 받기">
-          ↻ 새 문제
-        </button>
-      </div>
-      {error && (
+      </p>
+      <div ref={boxRef} role="group" aria-labelledby={`${id}-label`} aria-describedby={message ? `${id}-error` : undefined} className="min-h-[65px]" />
+      {message && (
         <p id={`${id}-error`} role="alert" className="mt-1 text-xs font-medium text-danger">
-          {error}
+          {message}
         </p>
       )}
     </div>
   );
-}
+});
+
+export default Captcha;

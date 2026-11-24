@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import Captcha from "./Captcha";
+import { useRef, useState } from "react";
+import Captcha, { type CaptchaHandle } from "./Captcha";
 import Modal from "./Modal";
 import { Field } from "./ui";
 import { RepoError, errorMessage, type CaptchaAnswer } from "@/lib/repository";
@@ -50,6 +50,7 @@ export default function BugForm({
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaAnswer | null>(null);
+  const captchaRef = useRef<CaptchaHandle>(null);
   const [busy, setBusy] = useState(false);
   const [secretWarning, setSecretWarning] = useState<string[] | null>(null);
 
@@ -90,13 +91,15 @@ export default function BugForm({
       setFormError(errorMessage(err));
     } finally {
       setBusy(false);
+      // Turnstile 토큰은 한 번만 쓸 수 있다 — 서버로 보냈으면 결과와 상관없이 새로 받는다
+      captchaRef.current?.reset();
     }
   };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const errs = validateBug(v, { requirePassword: mode === "create" });
-    if (mode === "create" && !captcha) errs.captcha = "자동 등록 방지 문제를 풀어 주세요.";
+    if (mode === "create" && !captcha) errs.captcha = "자동 등록 방지 확인을 완료해 주세요.";
     setErrors(errs);
     if (Object.values(errs).some(Boolean)) {
       setFormError("입력 내용을 확인해 주세요.");
@@ -180,7 +183,7 @@ export default function BugForm({
         )}
       </Field>
 
-      {mode === "create" && <Captcha onChange={setCaptcha} error={errors.captcha} />}
+      {mode === "create" && <Captcha ref={captchaRef} onChange={setCaptcha} error={errors.captcha} />}
 
       {formError && (
         <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
