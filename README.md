@@ -89,7 +89,7 @@ npm run dev                     # http://localhost:3000 · 관리자: /admin
 | 이름 | 설명 |
 |---|---|
 | `DATABASE_URL`, `DIRECT_URL` | PostgreSQL 주소 (DIRECT_URL은 마이그레이션용 직접 연결 주소) |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 12자 이상만 받음. **배포 서버 환경변수에 넣지 않음** |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | `db:seed` 때만 쓰는 관리자 계정. 배포 DB는 6자 이상만 받음. **배포 서버 환경변수에 넣지 않음** |
 | `SESSION_SECRET` | 세션·열람 쿠키·캡차 서명 키 (32자 이상 무작위) |
 | `SYNC_SECRET` | 릴리스 자동 등록 API 인증 토큰 (앱 저장소 Actions Secret과 같은 값) |
 | `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 |

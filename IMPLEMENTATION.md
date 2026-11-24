@@ -158,7 +158,7 @@
 
 - 계정: DB `admin` 테이블. 회원가입, 관리자 추가, 비밀번호 변경 화면은 없다 (SFR-006 ①).
   - `npm run db:seed`가 `.env`의 `ADMIN_INITIAL_LOGIN_ID` / `ADMIN_INITIAL_PASSWORD`로 1명을 만든다.
-  - 로컬 테스트 계정은 `admin` / `admin`이다. 배포 DB에서는 12자 미만 비밀번호를 거부한다.
+  - 로컬 테스트 계정은 `admin` / `admin`이다. 배포 DB에서는 6자 미만 비밀번호를 거부한다.
 - **관리자 계정은 개발팀 공용 1개다.** 팀원 3명이 같은 아이디·비밀번호로 로그인한다. seed는 1명만 만들고, 여러 명을 만드는 기능은 두지 않는다.
   - **로그인 잠금도 공용이다.** 잠금은 계정 단위(`admin.failed_count` / `locked_until`)라서, 한 명이 5회 틀리면 전원이 5분 동안 로그인할 수 없다.
   - 여러 기기에서 동시에 로그인해도 서로 로그아웃되지 않는다. 세션이 서버 저장 없는 서명 쿠키라서 기기마다 따로 유지된다.
@@ -386,7 +386,7 @@ src/
 | 이름 | 설명 |
 |---|---|
 | `DATABASE_URL`, `DIRECT_URL` | PostgreSQL. 로컬은 `localhost:54329`(db:local) 또는 `5432`(Docker). 배포 서버는 그 서버의 PostgreSQL 주소 (DIRECT_URL = 마이그레이션용 직접 연결) |
-| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | seed 때만 쓴다. `change-me…`는 거부하고, 배포 DB는 12자 이상만 받는다 |
+| `ADMIN_INITIAL_LOGIN_ID`, `ADMIN_INITIAL_PASSWORD` | seed 때만 쓴다. `change-me…`는 거부하고, 배포 DB는 6자 이상만 받는다 |
 | `SESSION_SECRET` | 32자 이상 무작위. 세션·열람 쿠키·캡차 서명 키 |
 | `SYNC_SECRET` | `/api/releases/sync` 인증 토큰. **서버 전용** |
 | `GITHUB_REPO` | **설치 파일(.exe)이 올라가는 "앱 저장소"(공개)**의 `OWNER/REPO`. 사이트 저장소가 아니다. 다운로드 URL 검증·링크에 쓴다 |
@@ -548,14 +548,14 @@ npm start                      # 기본 포트 3000 (PORT 환경변수로 변경
 
 **관리자 계정 seed (로컬에서 한 번만)**
 - 운영 DB의 **직접 연결 주소**로 실행한다.
-- 관리자 비밀번호(12자 이상)는 서버나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
+- 관리자 비밀번호(6자 이상)는 서버나 파일에 저장하지 않고, 이 터미널에서만 임시로 지정한다.
 - Windows PowerShell 예시:
 
 ```powershell
 $env:DATABASE_URL = "<운영 DB 직접 연결 주소>"
 $env:DIRECT_URL   = "<운영 DB 직접 연결 주소>"
 $env:ADMIN_INITIAL_LOGIN_ID = "<공용 로그인 아이디>"
-$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+$env:ADMIN_INITIAL_PASSWORD = "<6자 이상 비밀번호>"
 npx prisma db seed
 Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
 ```
@@ -618,7 +618,7 @@ $env:DATABASE_URL = "<Neon Direct 주소>"
 $env:DIRECT_URL   = "<Neon Direct 주소>"
 npx prisma migrate deploy
 $env:ADMIN_INITIAL_LOGIN_ID = "<추측하기 어려운 아이디>"
-$env:ADMIN_INITIAL_PASSWORD = "<12자 이상 비밀번호>"
+$env:ADMIN_INITIAL_PASSWORD = "<6자 이상 비밀번호>"
 npx prisma db seed
 Remove-Item Env:DATABASE_URL, Env:DIRECT_URL, Env:ADMIN_INITIAL_LOGIN_ID, Env:ADMIN_INITIAL_PASSWORD
 ```
