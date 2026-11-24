@@ -6,6 +6,7 @@ import type { ReleasePayload } from "@/lib/release-validation";
 import { clearAdminSession, loginAdmin, requireAdmin } from "../auth";
 import { id, obj, run, str } from "../run";
 import { scheduleCleanup } from "../cleanup";
+import { importRecentGithubReleases } from "../github-release";
 import * as qna from "../services/questions";
 import * as bugs from "../services/bugs";
 import * as releases from "../services/releases";
@@ -91,6 +92,10 @@ export async function buildSyncPayloadAction() {
 }
 export async function simulateSyncAction(payload: unknown) {
   return admin(() => releases.simulateGithubSync(payloadOf(payload)));
+}
+/** webhook을 놓쳤을 때 — GitHub의 최근 릴리스 10개 중 DB에 없는 정식 릴리스를 등록 */
+export async function importGithubReleasesAction() {
+  return admin(() => importRecentGithubReleases());
 }
 export async function createManualReleaseAction(payload: unknown) {
   return admin((adminId) => releases.createManualRelease(payloadOf(payload), adminId));

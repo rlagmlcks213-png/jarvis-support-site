@@ -66,11 +66,11 @@ async function insertRelease(v: ValidRelease, uploadedBy: number | null): Promis
 }
 
 async function validate(payload: unknown, mode: "sync" | "manual") {
-  const existingVersions = (await db.release.findMany({ select: { version: true } })).map((r) => versionFromDb(r.version));
+  const existingVersions = await existingReleaseVersions();
   return validateReleasePayload(payload, { repo: GITHUB_REPO, existingVersions, mode });
 }
 
-/** POST /api/releases/sync — GitHub Actions 자동 등록 (source=GITHUB, uploadedBy=null) */
+/** POST /api/releases/sync, GitHub webhook(server/github-release.ts) 공용 — 자동 등록 (source=GITHUB, uploadedBy=null) */
 export async function syncFromGithub(payload: unknown): Promise<{ ok: true; release: Release } | { ok: false; errors: Record<string, string>; duplicate: boolean }> {
   const result = await validate(payload, "sync");
   if (!result.ok) return result;
@@ -142,6 +142,28 @@ export async function updateReleaseNote(releaseId: number, releaseNote: string) 
 
 export async function setReleaseHidden(releaseId: number, hidden: boolean) {
   await db.release.update({ where: { id: releaseId }, data: { isHidden: hidden } });
+}
+
+// ── GitHub webhook용 (버전으로 찾기) ───────────────────
+/** 등록된 모든 버전 ("1.0.2" 형식) */
+export async function existingReleaseVersions(): Promise<string[]> {
+  return (await db.release.findMany({ select: { version: true } })).map((r) => versionFromDb(r.version));
+}
+
+const validVersion = (v: string) => /^v?\d+\.\d+\.\d+$/i.test(v.trim());
+
+/** GitHub에서 릴리스를 지웠을 때 — source=GITHUB인 같은 버전을 숨긴다(삭제하지 않음). 연결 버그 상태는 setReleaseHidden과 같이 그대로 */
+export async function hideGithubReleaseByVersion(version: string): Promise<boolean> {
+  if (!validVersion(version)) return false;
+  const res = await db.release.updateMany({ where: { version: versionToDb(version.trim()), source: "GITHUB" }, data: { isHidden: true } });
+  return res.count > 0;
+}
+
+/** GitHub 릴리스 본문을 고쳤을 때 — 같은 버전이 있으면 노트만 갱신 */
+export async function updateReleaseNoteByVersion(version: string, releaseNote: string): Promise<boolean> {
+  if (!validVersion(version)) return false;
+  const res = await db.release.updateMany({ where: { version: versionToDb(version.trim()) }, data: { releaseNote: cleanText(releaseNote) } });
+  return res.count > 0;
 }
 
 /**

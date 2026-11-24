@@ -7,6 +7,7 @@ import { mutate, unwrap } from "./client";
 export type { AdminQuestion } from "@/server/services/questions";
 export type { AdminBug } from "@/server/services/bugs";
 export type { AdminRelease } from "@/server/services/releases";
+export type { GithubImportSummary } from "@/server/github-release";
 export type { PostKind } from "@/server/services/misc";
 
 // 인증
@@ -34,6 +35,7 @@ export const mergeBug = (bugId: number, targetId: number | null) => mutate(A.mer
 export const adminGetReleases = () => unwrap(A.adminReleasesAction());
 export const buildSimulatedSyncPayload = () => unwrap(A.buildSyncPayloadAction());
 export const simulateGithubSync = (payload: ReleasePayload) => mutate(A.simulateSyncAction(payload));
+export const importGithubReleases = () => mutate(A.importGithubReleasesAction());
 export const createManualRelease = (payload: ReleasePayload) => mutate(A.createManualReleaseAction(payload));
 export const updateReleaseNote = (releaseId: number, note: string) => mutate(A.updateReleaseNoteAction(releaseId, note));
 export const setReleaseHidden = (releaseId: number, hidden: boolean) => mutate(A.setReleaseHiddenAction(releaseId, hidden));
