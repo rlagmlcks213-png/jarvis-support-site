@@ -44,8 +44,8 @@
 
 - **Next.js 15** (App Router, Server Actions) · **React 19** · **TypeScript** · **Tailwind CSS v4**
 - **Prisma 6** + **PostgreSQL** (로컬: 내장 PostgreSQL 또는 Docker)
-- 스크린샷: 서버 업로드 폴더에 저장 (`UPLOAD_DIR`)
-- 배포 방식: 미정 (정해지면 문서에 추가)
+- 스크린샷: 배포는 Netlify Blobs, 로컬은 `uploads/` 폴더 (`UPLOAD_DIR`)
+- 배포: **Netlify** + PostgreSQL(Neon) — 절차는 [IMPLEMENTATION.md 12-6](IMPLEMENTATION.md#12-6-netlify-배포-절차)
 - 메일: console / Gmail SMTP / Resend 중 선택
 
 ---
@@ -93,7 +93,7 @@ npm run dev                     # http://localhost:3000 · 관리자: /admin
 | `SESSION_SECRET` | 세션·열람 쿠키·캡차 서명 키 (32자 이상 무작위) |
 | `SYNC_SECRET` | 릴리스 자동 등록 API 인증 토큰 (앱 저장소 Actions Secret과 같은 값) |
 | `GITHUB_REPO` | 설치 파일이 올라가는 **앱 저장소**(공개)의 `OWNER/REPO`. 이 사이트 저장소가 아님 |
-| `UPLOAD_DIR` | (선택) 스크린샷 저장 폴더. 기본값은 프로젝트 폴더의 `uploads/` |
+| `UPLOAD_DIR` | (선택, 로컬 전용) 스크린샷 저장 폴더. 기본값은 프로젝트 폴더의 `uploads/`. Netlify에서는 자동으로 Netlify Blobs에 저장 |
 | `MAIL_PROVIDER`, `GMAIL_*`, `RESEND_API_KEY`, `MAIL_FROM` | 답변 알림 메일 |
 | `SITE_URL` | 메일 속 링크 주소 |
 

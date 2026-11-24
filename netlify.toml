@@ -1,0 +1,9 @@
+# Netlify 배포 설정 — Next.js는 Netlify가 자동으로 인식한다 (OpenNext 어댑터, 별도 플러그인 설치 불필요)
+# 환경변수(비밀값)는 이 파일이 아니라 Netlify 화면 Site configuration → Environment variables에 넣는다.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
